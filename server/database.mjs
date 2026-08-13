@@ -516,6 +516,12 @@ export class TaskboardDatabase {
       CREATE INDEX IF NOT EXISTS ai_chat_events_thread_created
         ON ai_chat_events(thread_id, created_at, id);
 
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at TEXT NOT NULL
+      );
+
     `);
 
     const projectColumns = this.database.prepare("PRAGMA table_info(projects)").all();
@@ -1325,6 +1331,19 @@ export class TaskboardDatabase {
         AND origin_project_id != ?
       LIMIT 1
     `).get(issueRef, issueRef, projectId));
+  }
+
+  getSetting(key) {
+    const row = this.database.prepare("SELECT value FROM settings WHERE key = ?").get(key);
+    return row ? row.value : null;
+  }
+
+  setSetting(key, value) {
+    this.database.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(key, value, now());
+    return this.getSetting(key);
   }
 
   createAiChatThread(input) {
