@@ -280,6 +280,13 @@ export class AiChatService {
     } = await this.#writeTurnAttachments(attachments);
     try {
       const backend = this.#backend();
+      // codex_thread_id 是后端私有的会话 id，换后端后 resume 一定失败（规格 §5.4）。
+      // 清掉本地副本让 buildArgs 走「新会话」分支，DB 里的值由本轮 thread.started 覆盖。
+      const staleBackend = thread.backend && thread.backend !== backend.id ? thread.backend : null;
+      if (staleBackend) {
+        thread = { ...thread, codexThreadId: null };
+        this.database.updateAiChatThread(threadId, { backend: backend.id, codexThreadId: null });
+      }
       const args = backend.buildArgs(thread, resolved.addDirectories, imagePaths);
       const prompt = backend.buildPrompt(
         thread,
@@ -310,6 +317,19 @@ export class AiChatService {
         data: Object.keys(userEventData).length > 0 ? userEventData : undefined,
       });
       this.#emit(threadId, { type: "ai.event", event: userEvent });
+
+      if (staleBackend) {
+        const notice = this.database.insertAiChatEvent({
+          threadId,
+          runId: run.id,
+          type: "agent_message",
+          role: "activity",
+          content: `此对话之前由 ${staleBackend} 生成，后端已切换到 ${backend.id}，`
+            + "旧会话无法接续，本轮从新会话开始。",
+          data: { status: "completed", backendSwitch: { from: staleBackend, to: backend.id } },
+        });
+        this.#emit(threadId, { type: "ai.event", event: notice });
+      }
 
       const resumingThreadId = thread.codexThreadId;
       let startedThreadId = null;

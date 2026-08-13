@@ -135,3 +135,32 @@ test("the env var beats the settings row and an explicit option beats both", asy
   // 只断言选中的后端，所以直接读私有解析结果的可观察出口：createThread 会抛在 catalog 上
   await assert.rejects(() => fixture.service.createThread({ projectId: "project" }));
 });
+
+test("a thread bound to another backend starts a new session instead of resuming", async () => {
+  const fixture = await createFixture();
+  fixture.database.setSetting("agent_backend", "ducc");
+  const thread = await fixture.service.createThread({ projectId: "project" });
+  // 造一条「上一轮是 codex 跑的」的历史
+  fixture.database.updateAiChatThread(thread.id, {
+    backend: "codex",
+    codexThreadId: "codex-session-1",
+  });
+
+  const run = await fixture.service.startTurn(thread.id, { message: "接着改" });
+  await waitFor(() => fixture.service.getRun(run.id).status === "completed");
+
+  const argv = (await readFile(fixture.argvPath, "utf8")).trim();
+  assert.equal(argv.includes("--resume"), false);
+  assert.equal(argv.includes(`--session-id ${thread.id}`), true);
+
+  const updated = fixture.database.getAiChatThread(thread.id);
+  assert.equal(updated.backend, "ducc");
+  assert.equal(updated.codexThreadId, thread.id);
+
+  const notice = fixture.database.listAiChatEvents(thread.id)
+    .find((event) => event.data?.backendSwitch);
+  assert.equal(notice.type, "agent_message");
+  assert.equal(notice.role, "activity");
+  assert.deepEqual(notice.data.backendSwitch, { from: "codex", to: "ducc" });
+  assert.match(notice.content, /后端已切换到 ducc/);
+});
