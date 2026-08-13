@@ -149,6 +149,7 @@ export class AiChatService {
   async createThread(input) {
     const resolved = await this.resolveContext(input.projectId, input.issueId);
     const catalog = await this.getCatalog(input.projectId, resolved);
+    if (input.model !== undefined) this.#requireKnownModel(catalog, input.model);
     const model = this.#resolveModel(catalog, input.model);
     const reasoningEffort = input.reasoningEffort ?? model.defaultReasoningEffort;
     this.#validateReasoningEffort(model, reasoningEffort);
@@ -183,6 +184,7 @@ export class AiChatService {
     if (Object.hasOwn(changes, "model") || Object.hasOwn(changes, "reasoningEffort")) {
       const catalog = await this.getCatalog(thread.origin.projectId);
       thread = this.getThread(threadId);
+      if (Object.hasOwn(changes, "model")) this.#requireKnownModel(catalog, changes.model);
       const model = this.#resolveModel(catalog, changes.model ?? thread.model);
       const reasoningEffort = changes.reasoningEffort ?? thread.reasoningEffort;
       this.#validateReasoningEffort(model, reasoningEffort);
@@ -251,6 +253,13 @@ export class AiChatService {
     }
     const model = this.#resolveModel(catalog, thread.model);
     this.#validateReasoningEffort(model, thread.reasoningEffort);
+    // 落回默认模型时要写回 thread，否则每轮都要重新落回一次，
+    // 而且网页上显示的模型名会和实际跑的对不上
+    if (model.slug !== thread.model) {
+      const reasoningEffort = model.defaultReasoningEffort ?? null;
+      this.database.updateAiChatThread(threadId, { model: model.slug, reasoningEffort });
+      thread = { ...thread, model: model.slug, reasoningEffort };
+    }
     if (resolved.workspacePath !== thread.origin.workspacePath) {
       throw new ApiError(
         409,
@@ -465,20 +474,23 @@ export class AiChatService {
     this.listeners.clear();
   }
 
-  #resolveModel(catalog, requestedModel) {
-    const model = requestedModel === undefined
-      ? catalog.models[0]
-      : catalog.models.find((candidate) => candidate.slug === requestedModel);
-    if (!model) {
-      throw new ApiError(
-        400,
-        "INVALID_MODEL",
-        requestedModel === undefined
-          ? "Codex did not provide an available model"
-          : `Unknown model '${requestedModel}'`,
-      );
+  // 用户输入（createThread/PATCH thread 的 model 参数）报的 slug 若不在 catalog 里，
+  // 是用户传错了，要报错；#resolveModel 只负责运行时把陈旧的 thread.model 落回默认值。
+  #requireKnownModel(catalog, requestedModel) {
+    const models = catalog.models ?? [];
+    if (!models.some((model) => model.slug === requestedModel)) {
+      throw new ApiError(400, "INVALID_MODEL", `Unknown model '${requestedModel}'`);
     }
-    return model;
+  }
+
+  // 找不到就落回 catalog 第一个模型（规格 §5.5）：全局切后端后，旧 thread 上存的是
+  // 前一个后端私有的 slug，抛错会让所有旧对话一发消息就 400。
+  #resolveModel(catalog, slug) {
+    const models = catalog.models ?? [];
+    if (models.length === 0) {
+      throw new ApiError(500, "NO_MODELS", "The agent backend reported no available models");
+    }
+    return models.find((model) => model.slug === slug) ?? models[0];
   }
 
   #validateReasoningEffort(model, reasoningEffort) {

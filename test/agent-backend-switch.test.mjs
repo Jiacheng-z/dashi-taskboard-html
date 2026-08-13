@@ -164,3 +164,24 @@ test("a thread bound to another backend starts a new session instead of resuming
   assert.deepEqual(notice.data.backendSwitch, { from: "codex", to: "ducc" });
   assert.match(notice.content, /后端已切换到 ducc/);
 });
+
+test("a model slug the new backend does not know falls back to its default", async () => {
+  const fixture = await createFixture();
+  fixture.database.setSetting("agent_backend", "ducc");
+  const thread = await fixture.service.createThread({ projectId: "project" });
+  // 造一条「上一轮是 codex 跑的、模型是 codex 私有 slug」的历史
+  fixture.database.updateAiChatThread(thread.id, {
+    backend: "codex",
+    model: "gpt-5.5",
+    reasoningEffort: "high",
+  });
+
+  const run = await fixture.service.startTurn(thread.id, { message: "接着改" });
+  await waitFor(() => fixture.service.getRun(run.id).status === "completed");
+
+  const updated = fixture.database.getAiChatThread(thread.id);
+  assert.equal(updated.model, "Opus 5");
+  // ducc adapter 给每个模型报的 defaultReasoningEffort 是 "medium"
+  // （server/agent-backends/ducc.mjs），不是计划文档里写的 null
+  assert.equal(updated.reasoningEffort, "medium");
+});

@@ -361,17 +361,13 @@ test("protocol terminal events determine run success and item errors remain non-
   }
 });
 
-test("startTurn revalidates the latest danger sandbox and persisted model settings", async () => {
+test("startTurn revalidates the latest danger sandbox and persisted reasoning effort", async () => {
   const fixture = await createFixture();
   try {
     for (const scenario of [
       {
         changes: { sandbox: "danger-full-access" },
         expectedCode: "DANGER_CONFIRMATION_REQUIRED",
-      },
-      {
-        changes: { model: "retired-model" },
-        expectedCode: "INVALID_MODEL",
       },
       {
         changes: { reasoningEffort: "ultra" },
