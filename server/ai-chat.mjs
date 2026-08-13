@@ -6,6 +6,7 @@ import { ApiError } from "./database.mjs";
 import { resolveAiWorkspace } from "./ai-chat-catalog.mjs";
 import { spawnCodexTurn } from "./ai-chat-process.mjs";
 import { DEFAULT_AGENT_BACKEND, resolveAgentBackend } from "./agent-backends/index.mjs";
+import { spawnGate } from "./agent-backends/spawn-gate.mjs";
 
 const SANDBOXES = new Set(["read-only", "workspace-write", "danger-full-access"]);
 const ERROR_CONTENT_LIMIT = 65_536;
@@ -375,6 +376,7 @@ export class AiChatService {
         }
         this.#emit(threadId, { type: "ai.event", event });
       };
+      await spawnGate.acquire(backend.id, backend.spawnGapMs);
       const { child, completion } = spawnCodexTurn({
         executable: this.#executableFor(backend),
         args,
