@@ -13,7 +13,7 @@ const ITEM_TYPES = new Set([
   "error",
 ]);
 
-function cappedText(value) {
+export function cappedText(value) {
   return typeof value === "string" ? value.slice(0, VISIBLE_TEXT_LIMIT) : "";
 }
 
@@ -23,7 +23,7 @@ function errorMessage(value) {
   return "";
 }
 
-function detailText(value) {
+export function detailText(value) {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return cappedText(value);
   try {
@@ -339,9 +339,7 @@ export const codexBackend = {
   spawnGapMs: 0,
   buildArgs: buildCodexArgs,
   buildPrompt: buildCodexPrompt,
-  // codex 的归一化是无状态的，所以每个 turn 拿到的都是同一个函数。
-  // 契约里之所以是 createNormalizer 而不是直接给函数，是为了 ducc ——
-  // 它要在一个 turn 内攒 tool_use → tool_result 的对应关系（见任务 7）。
+  // codex 的归一化本来就无状态；包一层工厂只是为了和 ducc 共用同一个契约
   createNormalizer: () => normalizeCodexEvent,
   // 直接暴露一份供单测断言用，运行时路径只走 createNormalizer()
   normalizeEvent: normalizeCodexEvent,

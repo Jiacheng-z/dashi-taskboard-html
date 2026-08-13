@@ -43,7 +43,7 @@ test("codex adapter builds the same argv it always did", () => {
 });
 
 test("codex adapter normalizes events into the shared schema", () => {
-  const { normalizeEvent } = resolveAgentBackend("codex");
+  const normalizeEvent = resolveAgentBackend("codex").createNormalizer();
   assert.deepEqual(normalizeEvent({ type: "thread.started", thread_id: "t-1" }), {
     kind: "thread.started",
     threadId: "t-1",
