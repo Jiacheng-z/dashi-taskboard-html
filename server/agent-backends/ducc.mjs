@@ -1,7 +1,14 @@
+import { execFile } from "node:child_process";
 import { accessSync, constants } from "node:fs";
+import { readFile, readdir } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
+import { withoutTaskboardLauncherEnvironment } from "../../shared/codex-environment.mjs";
 import { buildCodexPrompt, cappedText, detailText } from "./codex.mjs";
+
+const execFileAsync = promisify(execFile);
 
 // sandbox → ducc 的 --permission-mode（合法取值来自 `ducc --help`：
 // acceptEdits / bypassPermissions / default / dontAsk / plan / auto）
@@ -260,6 +267,96 @@ function executableOnPath(env) {
   return null;
 }
 
+// 与 ai-chat-catalog.mjs 的 CATALOG_TIMEOUT_MS / CATALOG_MAX_BUFFER 取同一档
+const CATALOG_TIMEOUT_MS = 10_000;
+const CATALOG_MAX_BUFFER = 2 * 1024 * 1024;
+const DUCC_EFFORTS = ["low", "medium", "high", "max"];
+// #resolveModel 拿 catalog.models[0] 当默认模型，所以要把它顶到第一位
+const DUCC_PREFERRED_MODEL = "Opus 5";
+const DUCC_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"];
+
+// `ducc models` 输出：一行 "Available Models:"，一行逗号分隔的名字
+function parseDuccModels(stdout) {
+  const line = String(stdout ?? "")
+    .split("\n")
+    .map((value) => value.trim())
+    .find((value) => value.length > 0 && !value.endsWith(":"));
+  if (!line) return [];
+  const slugs = [...new Set(line.split(",").map((value) => value.trim()).filter(Boolean))];
+  slugs.sort((left, right) =>
+    (right === DUCC_PREFERRED_MODEL ? 1 : 0) - (left === DUCC_PREFERRED_MODEL ? 1 : 0));
+  return slugs.map((slug) => ({
+    slug,
+    displayName: slug,
+    description: "",
+    defaultReasoningEffort: "medium",
+    supportedReasoningEfforts: [...DUCC_EFFORTS],
+    serviceTiers: [],
+  }));
+}
+
+// SKILL.md 的 YAML frontmatter 只取 description 一行；取不到就留空
+function skillDescription(source) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source);
+  if (!match) return "";
+  const line = match[1].split("\n").find((value) => value.startsWith("description:"));
+  return line ? cappedText(line.slice("description:".length).trim()) : "";
+}
+
+async function skillsInDirectory(root, scope) {
+  let entries;
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return [];   // 目录不存在就是没有 skill
+  }
+  const skills = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const skillPath = path.join(root, entry.name, "SKILL.md");
+    let source;
+    try {
+      source = await readFile(skillPath, "utf8");
+    } catch {
+      continue;  // 没有 SKILL.md 的子目录不是 skill
+    }
+    skills.push({
+      id: entry.name,
+      label: entry.name,
+      description: skillDescription(source),
+      path: skillPath,
+      scope,
+    });
+  }
+  return skills;
+}
+
+export async function discoverDuccCatalog({ executable, workspacePath, processEnv = process.env }) {
+  const environment = withoutTaskboardLauncherEnvironment(processEnv);
+  const homeDirectory = environment.HOME || os.homedir();
+  const [models, userSkills, repoSkills] = await Promise.all([
+    execFileAsync(executable, ["models"], {
+      cwd: workspacePath,
+      env: environment,
+      encoding: "utf8",
+      timeout: CATALOG_TIMEOUT_MS,
+      maxBuffer: CATALOG_MAX_BUFFER,
+    }).then((result) => parseDuccModels(result.stdout)).catch(() => []),
+    skillsInDirectory(path.join(homeDirectory, ".claude", "skills"), "user"),
+    skillsInDirectory(path.join(workspacePath, ".claude", "skills"), "repo"),
+  ]);
+
+  // 同名时仓库级覆盖用户级（与 ducc 自己的加载优先级一致）
+  const unique = new Map();
+  for (const skill of [...userSkills, ...repoSkills]) unique.set(skill.id, skill);
+
+  return {
+    models,
+    skills: [...unique.values()].sort((left, right) => left.label.localeCompare(right.label)),
+    sandboxes: [...DUCC_SANDBOXES],
+  };
+}
+
 export const duccBackend = {
   id: "ducc",
   // ducc 没有 codex 的 -C，工作区只能靠子进程 cwd
@@ -276,4 +373,5 @@ export const duccBackend = {
   // prompt 格式（skill 引用替换 + <taskboard_context> + <user_message>）与后端无关
   buildPrompt: buildCodexPrompt,
   createNormalizer: createDuccNormalizer,
+  discoverCatalog: discoverDuccCatalog,
 };
