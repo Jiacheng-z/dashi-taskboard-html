@@ -405,3 +405,47 @@ test("server close stops accepting requests before AI shutdown completes", async
     }
   }
 });
+
+test("the agent backend preference is readable and switchable over loopback", async () => {
+  const fixture = await createServerFixture();
+  try {
+    const initial = await request(fixture.baseUrl, "/api/local/ai/backend");
+    assert.equal(initial.response.status, 200);
+    assert.deepEqual(initial.body, { backend: "ducc", available: ["codex", "ducc"] });
+
+    const switched = await request(fixture.baseUrl, "/api/local/ai/backend", {
+      method: "PATCH",
+      body: { backend: "codex" },
+    });
+    assert.equal(switched.response.status, 200);
+    assert.deepEqual(switched.body, { backend: "codex", available: ["codex", "ducc"] });
+    assert.equal(
+      (await request(fixture.baseUrl, "/api/local/ai/backend")).body.backend,
+      "codex",
+    );
+
+    const unknown = await request(fixture.baseUrl, "/api/local/ai/backend", {
+      method: "PATCH",
+      body: { backend: "gemini-whatever" },
+    });
+    assert.equal(unknown.response.status, 400);
+    assert.equal(unknown.body.error.code, "INVALID_FIELD");
+    // 非法值不能落库
+    assert.equal(
+      (await request(fixture.baseUrl, "/api/local/ai/backend")).body.backend,
+      "codex",
+    );
+
+    const extraField = await request(fixture.baseUrl, "/api/local/ai/backend", {
+      method: "PATCH",
+      body: { backend: "ducc", model: "Opus 5" },
+    });
+    assert.equal(extraField.response.status, 400);
+    assert.equal(extraField.body.error.code, "UNKNOWN_FIELD");
+
+    const wrongMethod = await request(fixture.baseUrl, "/api/local/ai/backend", { method: "POST" });
+    assert.equal(wrongMethod.response.status, 405);
+  } finally {
+    await fixture.close();
+  }
+});

@@ -20,6 +20,7 @@ import { resolveCodexExecutable } from "../shared/codex-executable.mjs";
 import { withoutTaskboardLauncherEnvironment } from "../shared/codex-environment.mjs";
 import { normalizeWorkflowSnapshot } from "../shared/workflow-control-flow.mjs";
 import { AiChatService } from "./ai-chat.mjs";
+import { agentBackendIds, DEFAULT_AGENT_BACKEND } from "./agent-backends/index.mjs";
 import { resolveAiWorkspace, resolveMappedAiWorkspace } from "./ai-chat-catalog.mjs";
 import { createCloudConfigStore } from "./cloud-config.mjs";
 import {
@@ -1940,6 +1941,30 @@ export function createTaskboardServer(options = {}) {
             }
             : {}),
         });
+      }
+
+      if (pathname === "/api/local/ai/backend") {
+        assertNoQuery(url.searchParams, "/api/local/ai/backend");
+        const payload = () => ({
+          backend: database.getSetting("agent_backend") ?? DEFAULT_AGENT_BACKEND,
+          available: agentBackendIds(),
+        });
+        if (request.method === "GET") return sendJson(response, 200, payload());
+        if (request.method === "PATCH") {
+          const body = await readJson(request);
+          assertPlainObject(body);
+          assertAllowedKeys(body, new Set(["backend"]));
+          if (!agentBackendIds().includes(body.backend)) {
+            throw new ApiError(
+              400,
+              "INVALID_FIELD",
+              `backend must be one of: ${agentBackendIds().join(", ")}`,
+            );
+          }
+          database.setSetting("agent_backend", body.backend);
+          return sendJson(response, 200, payload());
+        }
+        return methodNotAllowed(response, ["GET", "PATCH"]);
       }
 
       if (pathname === "/api/local/ai/catalog") {
