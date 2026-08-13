@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import { Socket } from "node:net";
 
-const [executable, encodedArgs] = process.argv.slice(2);
+const [executable, encodedArgs, cwd] = process.argv.slice(2);
 if (!executable || !encodedArgs) process.exit(2);
 
 const child = spawn(executable, JSON.parse(encodedArgs), {
+  cwd: cwd || undefined,
   env: process.env,
   stdio: "inherit",
 });
