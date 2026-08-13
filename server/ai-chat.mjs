@@ -3,13 +3,9 @@ import os from "node:os";
 import path from "node:path";
 
 import { ApiError } from "./database.mjs";
-import { discoverAiCatalog, resolveAiWorkspace } from "./ai-chat-catalog.mjs";
-import {
-  buildCodexArgs,
-  buildCodexPrompt,
-  normalizeCodexEvent,
-  spawnCodexTurn,
-} from "./ai-chat-process.mjs";
+import { resolveAiWorkspace } from "./ai-chat-catalog.mjs";
+import { spawnCodexTurn } from "./ai-chat-process.mjs";
+import { DEFAULT_AGENT_BACKEND, resolveAgentBackend } from "./agent-backends/index.mjs";
 
 const SANDBOXES = new Set(["read-only", "workspace-write", "danger-full-access"]);
 const ERROR_CONTENT_LIMIT = 65_536;
@@ -49,6 +45,8 @@ export class AiChatService {
     this.database = options.database;
     this.codexExecutable = options.codexExecutable;
     this.codexStatePath = options.codexStatePath;
+    // 最高优先级的后端覆盖（宿主启动参数 / 测试 fixture）；不传则看环境变量与 settings
+    this.agentBackendId = options.agentBackendId;
     this.manageTaskboardSkillPath = options.manageTaskboardSkillPath;
     this.processEnv = options.processEnv ?? process.env;
     this.killGraceMs = options.killGraceMs ?? 1_000;
@@ -118,9 +116,26 @@ export class AiChatService {
     };
   }
 
+  #backend() {
+    // 每次调用都重新读，不缓存：改完设置下一个 turn 就生效（规格 §5.3）
+    const id = this.agentBackendId
+      ?? this.processEnv.TASKBOARD_AGENT_BACKEND
+      ?? this.database.getSetting("agent_backend")
+      ?? DEFAULT_AGENT_BACKEND;
+    return resolveAgentBackend(id);
+  }
+
+  #executableFor(backend) {
+    // codex 的路径已由 app.mjs 的 resolveCodexExecutable 解析过（含 .app bundle 分支），
+    // 继续用那个结果，行为与改造前完全一致
+    if (backend.id === "codex" && this.codexExecutable) return this.codexExecutable;
+    return backend.resolveExecutable({ env: this.processEnv });
+  }
+
   async #catalogForWorkspace(workspacePath) {
-    return discoverAiCatalog({
-      codexExecutable: this.codexExecutable,
+    const backend = this.#backend();
+    return backend.discoverCatalog({
+      executable: this.#executableFor(backend),
       workspacePath,
       processEnv: this.processEnv,
     });
@@ -150,6 +165,7 @@ export class AiChatService {
         workspacePath: resolved.workspacePath,
         ...(issue ? { issueId: issue.id, issueIdentifier: issue.identifier } : {}),
       },
+      backend: this.#backend().id,
       model: model.slug,
       reasoningEffort,
       sandbox,
@@ -263,8 +279,9 @@ export class AiChatService {
       imagePaths,
     } = await this.#writeTurnAttachments(attachments);
     try {
-      const args = buildCodexArgs(thread, resolved.addDirectories, imagePaths);
-      const prompt = buildCodexPrompt(
+      const backend = this.#backend();
+      const args = backend.buildArgs(thread, resolved.addDirectories, imagePaths);
+      const prompt = backend.buildPrompt(
         thread,
         {
           message: input.message,
@@ -298,40 +315,50 @@ export class AiChatService {
       let startedThreadId = null;
       let terminalOutcome = null;
       let terminalError = "";
+      // 每个 turn 一个 normalizer 实例：ducc 那个要在 turn 内攒 tool_use → tool_result 的状态
+      const normalize = backend.createNormalizer();
+      const handleNormalized = (normalized) => {
+        if (normalized.kind === "thread.started") {
+          if (
+            (resumingThreadId && normalized.threadId !== resumingThreadId)
+            || (startedThreadId && normalized.threadId !== startedThreadId)
+          ) {
+            throw new Error("The agent backend returned an unexpected session id");
+          }
+          startedThreadId = normalized.threadId;
+          this.database.updateAiChatThread(threadId, { codexThreadId: normalized.threadId });
+          return;
+        }
+        const event = this.database.insertAiChatEvent({
+          threadId,
+          runId: run.id,
+          type: normalized.type,
+          role: normalized.role,
+          content: normalized.content,
+          data: normalized.data,
+        });
+        // 终态由 adapter 用 outcome 声明，不再嗅探后端私有的 raw.type
+        if (normalized.outcome === "completed" && terminalOutcome === null) {
+          terminalOutcome = "completed";
+        } else if (normalized.outcome === "failed") {
+          terminalOutcome = "failed";
+          terminalError ||= normalized.content;
+        }
+        this.#emit(threadId, { type: "ai.event", event });
+      };
       const { child, completion } = spawnCodexTurn({
-        executable: this.codexExecutable,
+        executable: this.#executableFor(backend),
         args,
         prompt,
         env: this.processEnv,
+        cwd: backend.needsCwd ? resolved.workspacePath : undefined,
         onRawEvent: (raw) => {
-          const normalized = normalizeCodexEvent(raw);
+          const normalized = normalize(raw);
           if (!normalized) return;
-          if (normalized.kind === "thread.started") {
-            if (
-              (resumingThreadId && normalized.threadId !== resumingThreadId)
-              || (startedThreadId && normalized.threadId !== startedThreadId)
-            ) {
-              throw new Error("Codex returned an unexpected thread id");
-            }
-            startedThreadId = normalized.threadId;
-            this.database.updateAiChatThread(threadId, { codexThreadId: normalized.threadId });
-            return;
+          // ducc 的一条 assistant 消息可能拆出多个 content block
+          for (const item of Array.isArray(normalized) ? normalized : [normalized]) {
+            handleNormalized(item);
           }
-          const event = this.database.insertAiChatEvent({
-            threadId,
-            runId: run.id,
-            type: normalized.type,
-            role: normalized.role,
-            content: normalized.content,
-            data: normalized.data,
-          });
-          if (raw.type === "turn.completed" && terminalOutcome === null) {
-            terminalOutcome = "completed";
-          } else if (raw.type === "turn.failed" || raw.type === "error") {
-            terminalOutcome = "failed";
-            terminalError ||= normalized.content;
-          }
-          this.#emit(threadId, { type: "ai.event", event });
         },
       });
 

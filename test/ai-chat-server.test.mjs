@@ -42,6 +42,7 @@ if (args[0] === "debug") {
   }));
   const app = createTaskboardServer({
     dataDirectory: directory,
+    agentBackendId: "codex",
     codexExecutable,
     codexStatePath,
     skillPath: "/fixture/manage-taskboard/SKILL.md",

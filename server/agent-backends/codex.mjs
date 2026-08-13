@@ -292,6 +292,7 @@ export function normalizeCodexEvent(raw) {
         status: "completed",
         ...(Object.keys(usage).length > 0 ? { usage } : {}),
       },
+      outcome: "completed",
     };
   }
 
@@ -302,6 +303,7 @@ export function normalizeCodexEvent(raw) {
       role: "error",
       content: errorMessage(raw.error ?? raw.message),
       data: { status: "failed" },
+      outcome: "failed",
     };
   }
 
@@ -312,6 +314,7 @@ export function normalizeCodexEvent(raw) {
       role: "error",
       content: errorMessage(raw.message ?? raw.error),
       data: { status: "failed" },
+      outcome: "failed",
     };
   }
 

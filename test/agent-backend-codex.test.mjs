@@ -56,4 +56,7 @@ test("codex adapter normalizes events into the shared schema", () => {
   assert.equal(message.role, "assistant");
   assert.equal(message.content, "hello");
   assert.equal(normalizeEvent({ type: "item.completed", item: { type: "reasoning", text: "x" } }), null);
+  assert.equal(normalizeEvent({ type: "turn.completed", usage: {} }).outcome, "completed");
+  assert.equal(normalizeEvent({ type: "turn.failed", error: "boom" }).outcome, "failed");
+  assert.equal(normalizeEvent({ type: "error", message: "boom" }).outcome, "failed");
 });

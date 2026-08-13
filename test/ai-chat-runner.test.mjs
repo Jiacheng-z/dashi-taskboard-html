@@ -147,6 +147,7 @@ if (args[0] === "app-server") {
   database.createProject({ id: "other", name: "Other", workspacePath: null });
   const service = new AiChatService({
     database,
+    agentBackendId: "codex",
     codexExecutable: executable,
     codexStatePath,
     manageTaskboardSkillPath: "/fixture/manage-taskboard/SKILL.md",
@@ -326,7 +327,7 @@ test("parser and event callback failures kill a SIGTERM-resistant process group"
   try {
     for (const [message, expectedError] of [
       ["MALFORMED_STUBBORN", "Codex emitted malformed JSONL"],
-      ["CALLBACK_FATAL_STUBBORN", "Codex returned an unexpected thread id"],
+      ["CALLBACK_FATAL_STUBBORN", "The agent backend returned an unexpected session id"],
     ]) {
       await rm(fixture.descendantPath, { force: true });
       const thread = await fixture.service.createThread({ projectId: "project" });
