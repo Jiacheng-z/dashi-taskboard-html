@@ -204,3 +204,35 @@ test("AI chat events with the same timestamp retain SQLite insertion order", asy
     await fixture.close();
   }
 });
+
+test("threads persist the backend that produced their session id", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "taskboard-thread-backend-"));
+  const database = new TaskboardDatabase(path.join(directory, "taskboard.sqlite"));
+  try {
+    database.createProject({ id: "project", name: "Project", workspacePath: null });
+    const created = database.createAiChatThread({
+      title: "T",
+      origin: { projectId: "project", projectName: "Project", workspacePath: "/tmp/ws" },
+      model: "Opus 5",
+      reasoningEffort: "medium",
+      sandbox: "workspace-write",
+      backend: "ducc",
+    });
+    assert.equal(created.backend, "ducc");
+
+    const legacy = database.createAiChatThread({
+      title: "L",
+      origin: { projectId: "project", projectName: "Project", workspacePath: "/tmp/ws" },
+      model: "Opus 5",
+      reasoningEffort: "medium",
+      sandbox: "workspace-write",
+    });
+    assert.equal(legacy.backend, null);
+
+    const updated = database.updateAiChatThread(legacy.id, { backend: "codex" });
+    assert.equal(updated.backend, "codex");
+  } finally {
+    database.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

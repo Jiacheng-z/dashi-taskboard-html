@@ -309,7 +309,10 @@ function aiChatThreadFromRow(row) {
       ...(row.origin_issue_id ? { issueId: row.origin_issue_id } : {}),
       ...(row.origin_issue_identifier ? { issueIdentifier: row.origin_issue_identifier } : {}),
     },
+    // 列名保留历史叫法，语义是「后端侧会话 id」：codex 是 thread id，ducc 是 --session-id
     codexThreadId: row.codex_thread_id,
+    // 产出上面那个 id 的后端。纯留痕，不进任何 UI；resume 前用它判断 id 是否还认得
+    backend: row.backend ?? null,
     model: row.model,
     reasoningEffort: row.reasoning_effort,
     sandbox: row.sandbox,
@@ -523,6 +526,12 @@ export class TaskboardDatabase {
       );
 
     `);
+
+    const aiChatThreadColumns = this.database
+      .prepare("PRAGMA table_info(ai_chat_threads)").all();
+    if (!aiChatThreadColumns.some((column) => column.name === "backend")) {
+      this.database.exec("ALTER TABLE ai_chat_threads ADD COLUMN backend TEXT");
+    }
 
     const projectColumns = this.database.prepare("PRAGMA table_info(projects)").all();
     if (!projectColumns.some((column) => column.name === "workspace_path")) {
@@ -1354,9 +1363,9 @@ export class TaskboardDatabase {
         id, title, status,
         origin_project_id, origin_project_name, origin_workspace_path,
         origin_issue_id, origin_issue_identifier,
-        codex_thread_id, model, reasoning_effort, sandbox,
+        codex_thread_id, backend, model, reasoning_effort, sandbox,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.title,
@@ -1366,10 +1375,7 @@ export class TaskboardDatabase {
       input.origin.workspacePath,
       input.origin.issueId ?? null,
       input.origin.issueIdentifier ?? null,
-      input.codexThreadId ?? null,
-      input.model,
-      input.reasoningEffort,
-      input.sandbox,
+      input.codexThreadId ?? null, input.backend ?? null, input.model, input.reasoningEffort, input.sandbox,
       timestamp,
       input.updatedAt ?? timestamp,
     );
@@ -1385,6 +1391,7 @@ export class TaskboardDatabase {
       title: "title",
       status: "status",
       codexThreadId: "codex_thread_id",
+      backend: "backend",
       model: "model",
       reasoningEffort: "reasoning_effort",
       sandbox: "sandbox",
