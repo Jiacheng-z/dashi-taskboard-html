@@ -671,7 +671,7 @@ test("ducc buildArgs omits a non-uuid session id", () => {
 
 test("ducc buildArgs maps sandbox onto permission modes", () => {
   const readOnly = duccBackend.buildArgs({ ...THREAD, sandbox: "read-only" }, [], []);
-  assert.deepEqual(readOnly.slice(4, 8), [
+  assert.deepEqual(readOnly.slice(6, 10), [
     "--permission-mode", "default", "--disallowedTools", "Write,Edit,NotebookEdit",
   ]);
   const danger = duccBackend.buildArgs({ ...THREAD, sandbox: "danger-full-access" }, [], []);
@@ -2163,7 +2163,9 @@ test("a model slug the new backend does not know falls back to its default", asy
 
   const updated = fixture.database.getAiChatThread(thread.id);
   assert.equal(updated.model, "Opus 5");
-  assert.equal(updated.reasoningEffort, null);
+  // ducc adapter 给每个模型的 defaultReasoningEffort 是 "medium"（任务 8），
+  // 落回时会跟着模型一起写回，所以这里不是 null
+  assert.equal(updated.reasoningEffort, "medium");
 });
 ```
 
@@ -2434,3 +2436,29 @@ adapter 契约的 8 个字段 `{ id, resolveExecutable, needsCwd, spawnGapMs, bu
 自检时抓到并已修掉一处：任务 4 原来只给 codex adapter 挂 `normalizeEvent`（一个函数），而任务 9 的运行时路径调的是 `backend.createNormalizer()`，会 `TypeError`。现在 codex adapter 同时挂两个 —— `createNormalizer: () => normalizeCodexEvent` 供运行时，`normalizeEvent` 供任务 5、9 的单测直接断言。
 
 一处刻意的不一致值得记下来：函数名保留 `spawnCodexTurn`（任务 9 继续用这个名字），因为它管的是进程守护，与后端无关，改名会牵动 `server/ai-turn-owner.mjs` 一整套测试。规格 §5.1 明确说这层不动。
+
+---
+
+## 执行记录
+
+13 个任务全部落地，13 个 commit（`3312a92` … `24192a2`）。
+
+回归命令用的是**范围收窄版**，不是 `npm test`：
+
+```bash
+node --test $(ls test/*.test.mjs | grep -vE "cloud-|inject|task-editor")
+```
+
+`npm test` 在这台机器上有 24 个与本计划无关的既有红灯 —— cloud 那批要 D1/wrangler/miniflare，chromium 驱动的那批缺 dbus/UPower 直接 SIGSEGV。收窄后基线 308/308/0，做完 13 个任务是 **337/337/0**。`npx tsc --noEmit -p web/tsconfig.json` 干净。
+
+实施中偏离计划的地方，共 5 处：
+
+| # | 偏离 | 原因 |
+|---|---|---|
+| 1 | 全程用函数名/常量名 Grep 定位，不用计划里的行号 | 任务 1 落地后行号就开始漂，后面越漂越远 |
+| 2 | 任务 6 测试的断言下标 `slice(4, 8)` → `slice(6, 10)` | `THREAD.id` 是合法 UUID，`--session-id <id>` 必然先占两项。计划笔误，已改回计划文档 |
+| 3 | 任务 12 测试断言 `reasoningEffort` 从 `null` 改成 `"medium"` | ducc adapter 给每个模型的 `defaultReasoningEffort` 是 `"medium"`。计划笔误，已改回计划文档 |
+| 4 | 任务 9 顺带改了 `test/ai-chat-runner.test.mjs` 里一处错误文案断言 | 步骤 7 把 `"Codex returned an unexpected thread id"` 改成了 `"The agent backend returned an unexpected session id"`，计划漏了提这条断言要跟着改 |
+| 5 | 任务 12 新增 `#requireKnownModel()`，并删掉 runner 里 `model: "retired-model"` → `INVALID_MODEL` 那个场景 | `#resolveModel` 改成落回后，运行时不再报错；但 `createThread`/`updateThread` 收到用户显式传的未知 slug 仍应报 `INVALID_MODEL`，所以把校验从运行时路径挪到入参路径。计划步骤 6 已预见此分支 |
+
+「手工验证」那一节还没做 —— 要真跑一轮 ducc，得在浏览器里操作。
