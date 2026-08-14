@@ -75,7 +75,7 @@ export function buildTaskboardAutomationPrompt(request) {
   ].join("\n");
 }
 
-function buildTaskctlCommand(request) {
+export function buildTaskctlCommand(request) {
   const cliPath = path.resolve(path.dirname(request.skillPath), "../..", "cli/taskctl.mjs");
   const command = `${shellQuote(process.execPath)} ${shellQuote(cliPath)}`;
   const runtimeFilePath = process.env.CODEX_TASKBOARD_RUNTIME_FILE;
