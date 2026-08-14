@@ -117,6 +117,33 @@ export class TaskScheduler {
     return this.waitForRun(thread.id, run.id);
   }
 
+  finalize(task, run) {
+    const current = this.database.getTask(task.id);
+    // agent 自己收过尾（in_review），或任务被人手挪走了 → 不插手
+    if (!current || current.status !== "in_progress") return current;
+
+    const details = [
+      `run 状态：${run.status}`,
+      `退出码：${run.exitCode ?? "（无，进程被信号终止或被中断）"}`,
+      run.error ? `错误：${run.error}` : null,
+    ].filter(Boolean).join("\n");
+    this.database.createComment(task.id, {
+      body: `⚠️ 执行未完成\n\n${details}\n\nagent 退出时这条任务仍停在「处理中」，已自动移到「等你确认」，请人工看一眼。`,
+      threadId: null,
+      actor: SCHEDULER_ACTOR,
+    });
+
+    const fresh = this.database.getTask(task.id);
+    return this.database.moveTask(
+      fresh.id,
+      fresh.version,
+      "in_review",
+      undefined,
+      null,
+      SCHEDULER_ACTOR,
+    );
+  }
+
   stop() {
     if (this.timer) {
       clearInterval(this.timer);

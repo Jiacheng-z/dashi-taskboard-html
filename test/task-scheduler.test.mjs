@@ -239,3 +239,37 @@ test("runTask 把议题正文与评论送进 prompt，并等到 run 落终态", 
     await fixture.close();
   }
 });
+
+test("agent 没收尾时兜底评论并落 in_review；已收尾则不插手", async () => {
+  const fixture = await createFixture();
+  const project = {
+    projectId: "project",
+    projectName: "Project",
+    workspacePath: fixture.workspace,
+    automation: { model: null, reasoningEffort: null },
+  };
+  try {
+    // 情形一：假可执行文件 exit 9，任务仍停在 in_progress
+    const failing = fixture.scheduler.claimTask(fixture.createTodo("EXIT_NONZERO 故意失败"));
+    const failedRun = await fixture.scheduler.runTask(failing, project);
+    assert.equal(failedRun.status, "failed");
+    const finalized = fixture.scheduler.finalize(failing, failedRun);
+    assert.equal(finalized.status, "in_review");
+    const comment = fixture.database.listComments(failing.id).at(-1);
+    assert.equal(comment.body.startsWith("⚠️ 执行未完成"), true);
+    assert.equal(comment.body.includes("9"), true);
+    assert.equal(comment.authorId, "codex-agent");
+
+    // 情形二：agent 自己已经置了 in_review → finalize 不加评论、不改状态
+    const done = fixture.scheduler.claimTask(fixture.createTodo("正常完成"));
+    const okRun = await fixture.scheduler.runTask(done, project);
+    const moved = fixture.database.moveTask(
+      done.id, done.version, "in_review", undefined, null, ACTOR,
+    );
+    const after = fixture.scheduler.finalize(moved, okRun);
+    assert.equal(after.status, "in_review");
+    assert.equal(fixture.database.listComments(done.id).length, 0);
+  } finally {
+    await fixture.close();
+  }
+});
