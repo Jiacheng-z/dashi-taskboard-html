@@ -144,10 +144,64 @@ export class TaskScheduler {
     );
   }
 
-  stop() {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
+  async #execute(task, project) {
+    this.pending.add(task.id);
+    try {
+      const run = await this.runTask(task, project, () => this.pending.delete(task.id));
+      this.finalize(task, run);
+    } catch (error) {
+      // createThread / startTurn 自己抛错（THREAD_BUSY、AI_CHAT_ISSUE_NOT_FOUND 等）也要兜底，
+      // 否则任务永远卡在 in_progress 占着名额
+      this.finalize(task, {
+        status: "failed",
+        exitCode: null,
+        error: error?.message ?? String(error),
+      });
+    } finally {
+      this.pending.delete(task.id);
     }
+  }
+
+  async tick() {
+    const { concurrency } = this.config();
+    const startedAt = Date.now();
+    const started = [];
+    for (const project of this.database.listProjectsWithAutomationEnabled()) {
+      const lastClaimedAt = this.lastClaimedAt.get(project.projectId);
+      const gapMs = project.automation.intervalMinutes * 60_000;
+      if (lastClaimedAt !== undefined && startedAt - lastClaimedAt < gapMs) continue;
+      const todos = this.database.listTasks({
+        projectId: project.projectId,
+        status: "todo",
+        archived: "false",
+      });
+      for (const task of todos) {
+        if (this.database.countRunningAiChatRuns() + this.pending.size >= concurrency) {
+          return started;
+        }
+        const claimed = this.claimTask(task);
+        if (!claimed) continue;
+        this.lastClaimedAt.set(project.projectId, Date.now());
+        started.push(this.#execute(claimed, project));
+      }
+    }
+    return started;
+  }
+
+  start() {
+    if (this.timer) return;
+    this.timer = setInterval(() => {
+      // tick 内部已经把每条任务的异常吞在 #execute 里，这里只兜 tick 自身的同步/查询异常
+      this.tick().catch((error) => {
+        console.error("[task-scheduler] tick failed:", error);
+      });
+    }, this.config().intervalMs);
+    this.timer.unref?.();
+  }
+
+  stop() {
+    if (!this.timer) return;
+    clearInterval(this.timer);
+    this.timer = null;
   }
 }

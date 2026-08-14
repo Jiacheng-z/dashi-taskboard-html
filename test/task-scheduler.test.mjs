@@ -273,3 +273,52 @@ test("agent 没收尾时兜底评论并落 in_review；已收尾则不插手", a
     await fixture.close();
   }
 });
+
+test("tick 受并发上限约束，并遵守项目级 intervalMinutes 间隔", async () => {
+  const fixture = await createFixture({ concurrency: 2, holdMs: 300 });
+  try {
+    fixture.database.setProjectAutomation("project", { enabledByUser: true, intervalMinutes: 5 });
+    for (let index = 0; index < 5; index += 1) fixture.createTodo(`任务 ${index}`);
+
+    const pending = await fixture.scheduler.tick();
+    assert.equal(pending.length, 2);
+    assert.equal(
+      fixture.database.listTasks({ projectId: "project", status: "todo", archived: "false" }).length,
+      3,
+    );
+    await waitFor(() => fixture.database.countRunningAiChatRuns() === 2);
+
+    // 名额占满 → 再 tick 一次不认领
+    assert.deepEqual(await fixture.scheduler.tick(), []);
+    await Promise.all(pending);
+    assert.equal(fixture.database.countRunningAiChatRuns(), 0);
+
+    // 名额空了，但项目级 5 分钟间隔没到 → 仍不认领
+    assert.deepEqual(await fixture.scheduler.tick(), []);
+
+    // 把上次认领时间往前拨 6 分钟 → 放行下一批
+    fixture.scheduler.lastClaimedAt.set("project", Date.now() - 6 * 60_000);
+    const next = await fixture.scheduler.tick();
+    assert.equal(next.length, 2);
+    await Promise.all(next);
+
+    // 本次改造的核心 bug 回归：跑过的 4 条任务必须是 4 个互不相同的会话，
+    // 旧脚本是整个进程共用一个 threadId
+    const threadIds = fixture.database.listAiChatThreads().map((thread) => thread.id);
+    assert.equal(threadIds.length, 4);
+    assert.equal(new Set(threadIds).size, 4);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("automation 未开启的项目不会被认领", async () => {
+  const fixture = await createFixture();
+  try {
+    const task = fixture.createTodo("不该被碰");
+    assert.deepEqual(await fixture.scheduler.tick(), []);
+    assert.equal(fixture.database.getTask(task.id).status, "todo");
+  } finally {
+    await fixture.close();
+  }
+});
