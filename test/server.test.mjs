@@ -2010,3 +2010,56 @@ test("the local scheduler exposes a manual tick endpoint", async () => {
   const wrongMethod = await request(baseUrl, "/api/local/ai/scheduler/tick");
   assert.equal(wrongMethod.response.status, 405);
 });
+
+test("project automation options round-trip over HTTP", async () => {
+  const baseUrl = await startServer();
+  const created = await request(baseUrl, "/api/projects", {
+    method: "POST",
+    body: { id: "automated", name: "Automated" },
+  });
+  assert.equal(created.response.status, 201);
+
+  const initial = await request(baseUrl, "/api/projects/automated/automation");
+  assert.equal(initial.response.status, 200);
+  assert.deepEqual(initial.body, {
+    automation: { enabledByUser: false, intervalMinutes: 5, model: null, reasoningEffort: null },
+  });
+
+  const patched = await request(baseUrl, "/api/projects/automated/automation", {
+    method: "PATCH",
+    body: { enabledByUser: true, intervalMinutes: 15 },
+  });
+  assert.equal(patched.response.status, 200);
+  assert.deepEqual(patched.body, {
+    automation: { enabledByUser: true, intervalMinutes: 15, model: null, reasoningEffort: null },
+  });
+
+  // 浅合并：只带一个字段不会把其他字段冲掉
+  const again = await request(baseUrl, "/api/projects/automated/automation", {
+    method: "PATCH",
+    body: { model: "gpt-real" },
+  });
+  assert.deepEqual(again.body.automation, {
+    enabledByUser: true, intervalMinutes: 15, model: "gpt-real", reasoningEffort: null,
+  });
+
+  const unknownKey = await request(baseUrl, "/api/projects/automated/automation", {
+    method: "PATCH",
+    body: { quotaAware: true },
+  });
+  assert.equal(unknownKey.response.status, 400);
+
+  const badInterval = await request(baseUrl, "/api/projects/automated/automation", {
+    method: "PATCH",
+    body: { intervalMinutes: 0 },
+  });
+  assert.equal(badInterval.response.status, 400);
+
+  const missing = await request(baseUrl, "/api/projects/nope/automation");
+  assert.equal(missing.response.status, 404);
+
+  const wrongMethod = await request(baseUrl, "/api/projects/automated/automation", {
+    method: "DELETE",
+  });
+  assert.equal(wrongMethod.response.status, 405);
+});

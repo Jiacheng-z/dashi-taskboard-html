@@ -2177,6 +2177,47 @@ export function createTaskboardServer(options = {}) {
         return methodNotAllowed(response, ["DELETE"]);
       }
 
+      const projectAutomationRoute = pathname.match(/^\/api\/projects\/([^/]+)\/automation$/);
+      if (projectAutomationRoute) {
+        if ([...url.searchParams.keys()].length > 0) {
+          throw new ApiError(400, "UNKNOWN_QUERY_PARAMETER", "Project routes do not accept query parameters");
+        }
+        let projectId;
+        try {
+          projectId = decodeURIComponent(projectAutomationRoute[1]);
+        } catch {
+          throw new ApiError(400, "INVALID_PATH", "Project id contains invalid encoding");
+        }
+        validateProjectId(projectId);
+        if (request.method === "GET") {
+          return sendJson(response, 200, { automation: database.getProjectAutomation(projectId) });
+        }
+        if (request.method === "PATCH") {
+          const body = await readJson(request);
+          assertPlainObject(body);
+          assertAllowedKeys(
+            body,
+            new Set(["enabledByUser", "intervalMinutes", "model", "reasoningEffort"]),
+          );
+          if (Object.hasOwn(body, "enabledByUser") && typeof body.enabledByUser !== "boolean") {
+            throw new ApiError(400, "INVALID_FIELD", "enabledByUser must be a boolean");
+          }
+          if (Object.hasOwn(body, "intervalMinutes")
+            && !(Number.isInteger(body.intervalMinutes) && body.intervalMinutes > 0)) {
+            throw new ApiError(400, "INVALID_FIELD", "intervalMinutes must be a positive integer");
+          }
+          for (const key of ["model", "reasoningEffort"]) {
+            if (Object.hasOwn(body, key) && body[key] !== null && typeof body[key] !== "string") {
+              throw new ApiError(400, "INVALID_FIELD", `${key} must be a string or null`);
+            }
+          }
+          return sendJson(response, 200, {
+            automation: database.setProjectAutomation(projectId, body),
+          });
+        }
+        return methodNotAllowed(response, ["GET", "PATCH"]);
+      }
+
       const projectLabelsRoute = pathname.match(/^\/api\/projects\/([^/]+)\/labels$/);
       if (projectLabelsRoute) {
         if ([...url.searchParams.keys()].length > 0) {
