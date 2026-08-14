@@ -211,7 +211,7 @@ test("composer does not submit during IME composition and background runs keep l
 });
 
 test("submission stays disabled while a snapshot is loading", () => {
-  assert.match(chatSource, /contentEditable=\{!composerBlocked/);
+  assert.match(chatSource, /contentEditable=\{!composerBlocked\}/);
   assert.match(chatSource, /const sendBlocked = loading[\s\S]*?\|\| settingsSaving/);
   assert.match(chatSource, /if \(sendBlocked\) return;/);
   assert.match(chatSource, /chatPrimaryAction\([\s\S]*?sendBlocked/);

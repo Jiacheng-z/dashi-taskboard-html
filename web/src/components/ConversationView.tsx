@@ -456,7 +456,6 @@ export function ConversationView({
   deleting,
   error,
   initialComposerText,
-  readOnlyWhileRunning,
   onError,
   onThreadCreated,
   onThreadUpdate,
@@ -1276,7 +1275,6 @@ export function ConversationView({
 
   if (!available) return null;
 
-  const readOnlyComposer = Boolean(readOnlyWhileRunning) && snapshot?.thread.status === "running";
 
   return (
     <div className="ai-conversation">
@@ -1400,7 +1398,7 @@ export function ConversationView({
           <div
             ref={editorRef}
             className="ai-chat-composer-editor"
-            contentEditable={!composerBlocked && !readOnlyComposer}
+            contentEditable={!composerBlocked}
             data-placeholder={text("询问 Codex", "Ask Codex")}
             role="textbox"
             aria-label={text("发送给 Codex 的消息", "Message to Codex")}
