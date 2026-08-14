@@ -32,6 +32,7 @@ import { ApiError, TaskboardDatabase } from "./database.mjs";
 import { createJiraConfigStore } from "./jira-config.mjs";
 import { createJiraIntegration } from "./jira-integration.mjs";
 import { ProjectSummaryService } from "./project-summary.mjs";
+import { TaskScheduler } from "./task-scheduler.mjs";
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
@@ -1523,6 +1524,12 @@ export function createTaskboardServer(options = {}) {
     processEnv: codexProcessEnvironment,
     resolveContext: resolveAiChatContext,
   });
+  const scheduler = new TaskScheduler({
+    database,
+    aiChat,
+    manageTaskboardSkillPath: resolved.skillPath,
+    processEnv: codexProcessEnvironment,
+  });
   const projectSummary = new ProjectSummaryService({
     database,
     codexExecutable: resolved.codexExecutable,
@@ -1965,6 +1972,14 @@ export function createTaskboardServer(options = {}) {
           return sendJson(response, 200, payload());
         }
         return methodNotAllowed(response, ["GET", "PATCH"]);
+      }
+
+      if (pathname === "/api/local/ai/scheduler/tick") {
+        assertNoQuery(url.searchParams, "/api/local/ai/scheduler/tick");
+        if (request.method !== "POST") return methodNotAllowed(response, ["POST"]);
+        const started = await scheduler.tick();
+        const { concurrency, intervalMs } = scheduler.config();
+        return sendJson(response, 200, { started: started.length, concurrency, intervalMs });
       }
 
       if (pathname === "/api/local/ai/catalog") {
@@ -2798,6 +2813,7 @@ export function createTaskboardServer(options = {}) {
         else server.listen({ fd });
       });
       listening = true;
+      scheduler.start();
       return server.address();
     },
     async close() {
@@ -2809,6 +2825,7 @@ export function createTaskboardServer(options = {}) {
       events.close();
       for (const response of aiEventResponses) response.end();
       aiEventResponses.clear();
+      scheduler.stop();
       await aiChat.close();
       await projectSummary.close();
       await serverClosed;

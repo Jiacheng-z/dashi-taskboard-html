@@ -1998,3 +1998,15 @@ test("task changes from one LAN client are broadcast to another client", async (
   assert.equal(listResult.body.tasks.some((task) => task.id === createResult.body.task.id), true);
   await reader.cancel();
 });
+
+test("the local scheduler exposes a manual tick endpoint", async () => {
+  const baseUrl = await startServer();
+
+  const tick = await request(baseUrl, "/api/local/ai/scheduler/tick", { method: "POST" });
+  assert.equal(tick.response.status, 200);
+  // 默认项目的 automation 是关闭的，所以一条都不该被认领
+  assert.deepEqual(tick.body, { started: 0, concurrency: 2, intervalMs: 300_000 });
+
+  const wrongMethod = await request(baseUrl, "/api/local/ai/scheduler/tick");
+  assert.equal(wrongMethod.response.status, 405);
+});
