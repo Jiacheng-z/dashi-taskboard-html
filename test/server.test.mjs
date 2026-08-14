@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -1018,31 +1018,22 @@ test("task thread migration excludes comment-only aggregate entries", async () =
   assert.equal(comments.body.comments[0].threadId, "thread-comment-only");
 });
 
-test("development context scan resolves the current Codex conversation workspace", async () => {
+test("development context scan resolves the workspace from project state only", async () => {
   let expectedWorkspace;
   const baseUrl = await startServer(async (directory) => {
-    expectedWorkspace = directory;
-    const processesPath = path.join(directory, "chat_processes.json");
-    await writeFile(processesPath, JSON.stringify({
-      recent: [{
-        conversationId: "019f7f96-287b-7da0-bc7f-ffe03af85cc8",
-        cwd: directory,
-        updatedAtMs: 20,
-      }],
+    expectedWorkspace = await realpath(directory);
+    const statePath = path.join(directory, "codex-state.json");
+    await writeFile(statePath, JSON.stringify({
+      "local-projects": { local: { rootPaths: [directory] } },
     }));
-    return {
-      codexStatePath: path.join(directory, "missing-state.json"),
-      codexProcessesPath: processesPath,
-    };
+    return { codexStatePath: statePath };
   });
-  const result = await request(
-    baseUrl,
-    "/api/projects/local/development-contexts?codexThreadId=019f7f96-287b-7da0-bc7f-ffe03af85cc8",
-  );
+  const result = await request(baseUrl, "/api/projects/local/development-contexts");
   assert.equal(result.response.status, 200);
   assert.equal(result.body.workspacePath, expectedWorkspace);
   assert.deepEqual(result.body.contexts, []);
 
+  // 显式指定设备工作区仍然优先
   const deviceWorkspace = path.join(expectedWorkspace, "another-device-workspace");
   const deviceResult = await request(
     baseUrl,
@@ -1050,6 +1041,13 @@ test("development context scan resolves the current Codex conversation workspace
   );
   assert.equal(deviceResult.response.status, 200);
   assert.equal(deviceResult.body.workspacePath, deviceWorkspace);
+
+  // 两个 codex 猜测参数彻底下线
+  for (const query of ["codexThreadId=019f7f96-287b-7da0-bc7f-ffe03af85cc8", "codexProjectId=local"]) {
+    const rejected = await request(baseUrl, `/api/projects/local/development-contexts?${query}`);
+    assert.equal(rejected.response.status, 400);
+    assert.equal(rejected.body.error.code, "UNKNOWN_QUERY_PARAMETER");
+  }
 });
 
 test("device workspaces come from this machine's Codex project roots", async () => {

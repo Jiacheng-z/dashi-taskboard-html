@@ -22,7 +22,7 @@ import { normalizeWorkflowSnapshot } from "../shared/workflow-control-flow.mjs";
 import { AGENT_ACTOR } from "../shared/agent-actor.mjs";
 import { AiChatService } from "./ai-chat.mjs";
 import { agentBackendIds, DEFAULT_AGENT_BACKEND } from "./agent-backends/index.mjs";
-import { resolveAiWorkspace, resolveMappedAiWorkspace } from "./ai-chat-catalog.mjs";
+import { loadDeviceWorkspaces, resolveAiWorkspace, resolveMappedAiWorkspace } from "./ai-chat-catalog.mjs";
 import { createCloudConfigStore } from "./cloud-config.mjs";
 import {
   CloudProxyError,
@@ -1056,41 +1056,6 @@ async function readCodexProjectWorkspaces(codexStatePath) {
   }
 }
 
-function latestThreadCwd(value, threadId) {
-  const matches = [];
-  const stack = [value];
-  while (stack.length > 0) {
-    const candidate = stack.pop();
-    if (!candidate || typeof candidate !== "object") continue;
-    if (candidate.conversationId === threadId && typeof candidate.cwd === "string" && candidate.cwd.trim()) {
-      matches.push(candidate);
-    }
-    stack.push(...(Array.isArray(candidate) ? candidate : Object.values(candidate)));
-  }
-  matches.sort((left, right) => Number(right.updatedAtMs ?? 0) - Number(left.updatedAtMs ?? 0));
-  return matches[0]?.cwd ?? null;
-}
-
-async function resolveProjectWorkspace(project, codexProjectId, codexThreadId, codexStatePath, codexProcessesPath) {
-  try {
-    const state = JSON.parse(await readFile(codexStatePath, "utf8"));
-    const assignment = state["thread-project-assignments"]?.[codexThreadId];
-    const root = codexProjectRoot(state, project.id)
-      ?? codexProjectRoot(state, codexProjectId)
-      ?? codexProjectRoot(state, assignment?.projectId)
-      ?? (typeof assignment?.cwd === "string" ? assignment.cwd : null);
-    if (root) return root;
-  } catch {}
-  if (project.workspacePath) return project.workspacePath;
-  if (!codexThreadId) return null;
-  try {
-    const processes = JSON.parse(await readFile(codexProcessesPath, "utf8"));
-    return latestThreadCwd(processes, codexThreadId);
-  } catch {
-    return null;
-  }
-}
-
 function parseWorktrees(output) {
   const contexts = [];
   for (const block of output.trim().split(/\n\s*\n/)) {
@@ -1321,8 +1286,6 @@ export function resolveServerOptions(options = {}) {
     codexExecutable: resolveCodexExecutable({ explicit: options.codexExecutable }),
     codexStatePath: options.codexStatePath
       ?? path.join(codexHome, ".codex-global-state.json"),
-    codexProcessesPath: options.codexProcessesPath
-      ?? path.join(codexHome, "process_manager", "chat_processes.json"),
     instanceToken,
     instanceSecret,
     version: String(
@@ -2273,9 +2236,7 @@ export function createTaskboardServer(options = {}) {
       const developmentContextsRoute = pathname.match(/^\/api\/projects\/([^/]+)\/development-contexts$/);
       if (developmentContextsRoute) {
         if (request.method !== "GET") return methodNotAllowed(response, ["GET"]);
-        const unknownQuery = [...url.searchParams.keys()].filter((key) => (
-          !["codexProjectId", "codexThreadId", "workspacePath"].includes(key)
-        ));
+        const unknownQuery = [...url.searchParams.keys()].filter((key) => key !== "workspacePath");
         if (unknownQuery.length > 0) {
           throw new ApiError(400, "UNKNOWN_QUERY_PARAMETER", `Unknown query parameter: ${unknownQuery[0]}`);
         }
@@ -2295,14 +2256,6 @@ export function createTaskboardServer(options = {}) {
           }
           : database.getProject(projectId);
         if (!project) throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectId}' does not exist`);
-        const codexProjectId = stringField(url.searchParams.get("codexProjectId") ?? null, "codexProjectId", {
-          nullable: true,
-          maxLength: 128,
-        });
-        const codexThreadId = stringField(url.searchParams.get("codexThreadId") ?? null, "codexThreadId", {
-          nullable: true,
-          maxLength: 256,
-        });
         const deviceWorkspacePath = stringField(
           url.searchParams.get("workspacePath") ?? null,
           "workspacePath",
@@ -2311,13 +2264,10 @@ export function createTaskboardServer(options = {}) {
         if (deviceWorkspacePath?.includes("\0")) {
           throw new ApiError(400, "INVALID_FIELD", "'workspacePath' cannot contain null bytes");
         }
-        const workspacePath = deviceWorkspacePath ?? await resolveProjectWorkspace(
-          project,
-          codexProjectId,
-          codexThreadId,
-          resolved.codexStatePath,
-          resolved.codexProcessesPath,
-        );
+        const workspacePath = deviceWorkspacePath
+          ?? (await loadDeviceWorkspaces(resolved.codexStatePath, database)).get(projectId)
+          ?? project.workspacePath
+          ?? null;
         return sendJson(
           response,
           200,

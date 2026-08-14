@@ -428,16 +428,12 @@ export async function deleteProject(projectId: string): Promise<void> {
 
 export async function listDevelopmentContexts(
   projectId: string,
-  codexProjectId?: string,
-  codexThreadId?: string,
   signal?: AbortSignal,
   workspacePath?: string,
 ): Promise<DevelopmentScan> {
-  const query = new URLSearchParams();
-  if (codexProjectId) query.set("codexProjectId", codexProjectId);
-  if (codexThreadId) query.set("codexThreadId", codexThreadId);
-  if (workspacePath) query.set("workspacePath", workspacePath);
-  const suffix = query.size > 0 ? `?${query}` : "";
+  const suffix = workspacePath
+    ? `?${new URLSearchParams({ workspacePath })}`
+    : "";
   return request<DevelopmentScan>(
     `/api/projects/${encodeURIComponent(projectId)}/development-contexts${suffix}`,
     { signal },

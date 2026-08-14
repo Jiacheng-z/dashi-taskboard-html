@@ -1634,14 +1634,10 @@ export function App() {
       return;
     }
     const controller = new AbortController();
-    const codexProjectId = selectedProjectId === GLOBAL_PROJECT_ID ? hostContext?.projectId : selectedProjectId;
-    const codexThreadId = hostContext?.threadId ?? detailTask?.threadId ?? undefined;
     setDevelopmentScan({ workspacePath: selectedDeviceWorkspacePath ?? null, contexts: [] });
     setDevelopmentScanLoading(true);
     void listDevelopmentContexts(
       selectedProjectId,
-      codexProjectId,
-      codexThreadId,
       controller.signal,
       selectedDeviceWorkspacePath,
     )
@@ -1659,9 +1655,6 @@ export function App() {
       });
     return () => controller.abort();
   }, [
-    detailTask?.threadId,
-    hostContext?.projectId,
-    hostContext?.threadId,
     rememberDeviceWorkspacePath,
     selectedProjectId,
     selectedDeviceWorkspacePath,
