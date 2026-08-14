@@ -81,6 +81,42 @@ export class TaskScheduler {
     });
   }
 
+  waitForRun(threadId, runId) {
+    return new Promise((resolve) => {
+      const settle = (run) => {
+        unsubscribe();
+        resolve(run);
+      };
+      const unsubscribe = this.aiChat.subscribe(threadId, (event) => {
+        if (event.type !== "ai.run") return;
+        if (event.run.id !== runId || event.run.status === "running") return;
+        settle(event.run);
+      });
+      // 进程可能在订阅之前就退出了（#finishRun 已经 emit 完），补查一次兜住这个竞态
+      const current = this.aiChat.getRun(runId);
+      if (current.status !== "running") settle(current);
+    });
+  }
+
+  async runTask(task, project, onStarted) {
+    const thread = await this.ensureThread(task, project.automation);
+    const prompt = buildAgentTaskPrompt({
+      task,
+      comments: this.database.listComments(task.id),
+      project: {
+        id: project.projectId,
+        name: project.projectName,
+        workspacePath: project.workspacePath,
+      },
+      skillPath: this.manageTaskboardSkillPath,
+      taskctlCommand: buildTaskctlCommand({ skillPath: this.manageTaskboardSkillPath }),
+    });
+    const run = await this.aiChat.startTurn(thread.id, { message: prompt });
+    // run 行已经落库，从这一刻起并发计数交给 countRunningAiChatRuns()（任务 9 传这个回调）
+    onStarted?.();
+    return this.waitForRun(thread.id, run.id);
+  }
+
   stop() {
     if (this.timer) {
       clearInterval(this.timer);

@@ -209,3 +209,33 @@ test("每条任务各自建 thread，已绑定的任务复用原 thread", async 
     await fixture.close();
   }
 });
+
+test("runTask 把议题正文与评论送进 prompt，并等到 run 落终态", async () => {
+  const fixture = await createFixture();
+  try {
+    const task = fixture.createTodo("修一个 bug");
+    fixture.database.createComment(task.id, {
+      body: "顺手把日志也补上",
+      threadId: null,
+      actor: ACTOR,
+    });
+    const project = {
+      projectId: "project",
+      projectName: "Project",
+      workspacePath: fixture.workspace,
+      automation: { model: null, reasoningEffort: null },
+    };
+
+    const run = await fixture.scheduler.runTask(task, project);
+    assert.equal(run.status, "completed");
+
+    const [capture] = await fixture.captured();
+    assert.equal(capture.prompt.includes(task.identifier), true);
+    assert.equal(capture.prompt.includes("修一个 bug"), true);
+    assert.equal(capture.prompt.includes("顺手把日志也补上"), true);
+    assert.equal(capture.prompt.includes("禁止任何 git 写操作"), true);
+    assert.equal(capture.prompt.includes("cli/taskctl.mjs"), true);
+  } finally {
+    await fixture.close();
+  }
+});
