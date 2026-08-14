@@ -1,39 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  AUTOMATION_MODELS,
-  getAutomationModel,
-  withAutomationModel,
-  type AutomationModel,
-  type AutomationReasoningEffort,
-} from "../../../shared/taskboard-automation-options.mjs";
 import { TaskboardIcon } from "./TaskboardIcon";
 import { useTaskboardI18n } from "../i18n";
+import type { AiChatModel } from "../types";
 
 type AutomationStatus = "ACTIVE" | "PAUSED";
-type AutomationQuotaState = "available" | "blocked" | "unknown" | "unavailable";
-type IntervalMinutes = 5 | 10 | 15 | 30 | 60;
 
-interface AutomationOptions {
+export interface AutomationOptions {
   enabledByUser: boolean;
-  quotaAware: boolean;
-  intervalMinutes: IntervalMinutes;
-  model: AutomationModel;
-  reasoningEffort: AutomationReasoningEffort;
-}
-
-interface AutomationState extends AutomationOptions {
-  status: AutomationStatus;
-  quota?: {
-    state: AutomationQuotaState;
-    checkedAt: number;
-    resetsAt?: number;
-    reason?: "api-key";
-  };
+  intervalMinutes: number;
+  /** null = 跟随所选后端的默认模型，不写死 slug */
+  model: string | null;
+  /** null = 跟随所选模型的 defaultReasoningEffort */
+  reasoningEffort: string | null;
 }
 
 interface ProjectAutomationMenuProps {
-  automation?: Partial<AutomationState>;
+  automation?: Partial<AutomationOptions>;
+  models: AiChatModel[];
   pending: boolean;
   error: string | null;
   unavailableReason: string | null;
@@ -43,13 +27,14 @@ interface ProjectAutomationMenuProps {
 
 const DEFAULT_OPTIONS: AutomationOptions = {
   enabledByUser: false,
-  quotaAware: false,
   intervalMinutes: 5,
-  model: "gpt-5.5",
-  reasoningEffort: "high",
+  model: null,
+  reasoningEffort: null,
 };
 
-const EFFORT_LABELS: Record<AutomationReasoningEffort, readonly [string, string]> = {
+// 各后端的强度取值不是同一套（codex 六档、ducc 目前只有 medium），
+// 所以这张表是「已知取值的中文名」而非枚举，未知取值原样显示。
+const EFFORT_LABELS: Record<string, readonly [string, string]> = {
   low: ["轻度", "Low"],
   medium: ["中", "Medium"],
   high: ["高", "High"],
@@ -60,33 +45,29 @@ const EFFORT_LABELS: Record<AutomationReasoningEffort, readonly [string, string]
 
 export function ProjectAutomationMenu({
   automation,
+  models,
   pending,
   error,
   unavailableReason,
   onOpen,
   onChange,
 }: ProjectAutomationMenuProps) {
-  const { locale, text } = useTaskboardI18n();
+  const { text } = useTaskboardI18n();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const wasPendingRef = useRef(pending);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0, ready: false });
   const [draft, setDraft] = useState<AutomationOptions>(DEFAULT_OPTIONS);
-  const status = automation?.status ?? "PAUSED";
-  const quota = automation?.quota;
-  const stateLabel = !automation?.enabledByUser
-    ? text("已暂停", "Paused")
-    : automation.quotaAware && quota?.state === "blocked"
-      ? text("额度暂停", "Paused by quota")
-      : automation.quotaAware && quota?.state === "unavailable"
-        ? text("额度不可用", "Quota unavailable")
-        : automation.quotaAware && (!quota || quota.state === "unknown")
-          ? text("额度未知", "Quota unknown")
-          : status === "ACTIVE"
-            ? text("运行中", "Running")
-            : text("已暂停", "Paused");
+  // 原来的 status 来自 codex app 的 automation item，脱离 app 后没有这个信息源，
+  // 唯一真源就是用户自己的开关。
+  const status: AutomationStatus = automation?.enabledByUser ? "ACTIVE" : "PAUSED";
+  const stateLabel = status === "ACTIVE"
+    ? text("运行中", "Running")
+    : text("已暂停", "Paused");
   const disabled = pending || Boolean(unavailableReason);
+  const selectedModel = models.find((model) => model.slug === draft.model) ?? null;
+  const efforts = selectedModel?.supportedReasoningEfforts ?? [];
 
   useEffect(() => {
     if (!open) return;
@@ -175,47 +156,6 @@ export function ProjectAutomationMenu({
           <span aria-hidden="true" />
         </button>
       </div>
-      <div className="project-automation-switch">
-        <span>{text("根据额度启用/关闭", "Use quota limits")}</span>
-        <button
-          type="button"
-          className={`board-setting-switch${draft.quotaAware ? " is-on" : ""}`}
-          role="switch"
-          aria-checked={draft.quotaAware}
-          disabled={disabled}
-          onClick={() => submitChange({
-            ...draft,
-            quotaAware: !draft.quotaAware,
-          })}
-        >
-          <span aria-hidden="true" />
-        </button>
-      </div>
-      {draft.quotaAware && (
-        <div className={`project-automation-quota is-${quota?.state ?? "unknown"}`}>
-          {quota?.state === "available" && text("当前额度可用", "Quota is available")}
-          {quota?.state === "blocked" && (
-            quota.resetsAt
-              ? text(
-                `额度已用尽，预计 ${formatResetTime(quota.resetsAt, locale)} 恢复`,
-                `Quota is exhausted. Expected reset: ${formatResetTime(quota.resetsAt, locale)}.`,
-              )
-              : text("额度已用尽，自动认领已暂停", "Quota is exhausted. Auto-claim is paused.")
-          )}
-          {quota?.state === "unavailable" && (
-            quota.reason === "api-key"
-              ? text(
-                "API Key 模式不支持读取 Codex App 额度",
-                "API key mode cannot read the Codex app quota.",
-              )
-              : text("当前账户无法读取额度", "This account cannot read quota information.")
-          )}
-          {(!quota || quota.state === "unknown") && text(
-            "额度状态未知，自动认领已暂停",
-            "Quota status is unknown. Auto-claim is paused.",
-          )}
-        </div>
-      )}
       <label className="project-automation-field">
         <span>{text("间隔", "Interval")}</span>
         <select
@@ -223,7 +163,7 @@ export function ProjectAutomationMenu({
           disabled={disabled}
           onChange={(event) => submitChange({
             ...draft,
-            intervalMinutes: Number(event.target.value) as IntervalMinutes,
+            intervalMinutes: Number(event.target.value),
           })}
         >
           {[5, 10, 15, 30, 60].map((minutes) => (
@@ -234,27 +174,26 @@ export function ProjectAutomationMenu({
       <label className="project-automation-field">
         <span>{text("模型", "Model")}</span>
         <select
-          value={draft.model}
+          value={draft.model ?? ""}
           disabled={disabled}
-          onChange={(event) => submitChange(withAutomationModel(draft, event.target.value as AutomationModel))}
+          onChange={(event) => submitChange({ ...draft, model: event.target.value || null, reasoningEffort: null })}
         >
-          {AUTOMATION_MODELS.map((model) => (
-            <option key={model.slug} value={model.slug}>{model.label}</option>
+          <option value="">{text("跟随后端默认", "Backend default")}</option>
+          {models.map((model) => (
+            <option key={model.slug} value={model.slug}>{model.displayName}</option>
           ))}
         </select>
       </label>
       <label className="project-automation-field">
         <span>{text("推理强度", "Reasoning effort")}</span>
         <select
-          value={draft.reasoningEffort}
+          value={draft.reasoningEffort ?? selectedModel?.defaultReasoningEffort ?? ""}
           disabled={disabled}
-          onChange={(event) => submitChange({
-            ...draft,
-            reasoningEffort: event.target.value as AutomationReasoningEffort,
-          })}
+          onChange={(event) => submitChange({ ...draft, reasoningEffort: event.target.value || null })}
         >
-          {getAutomationModel(draft.model).efforts.map((effort) => (
-            <option key={effort} value={effort}>{text(...EFFORT_LABELS[effort])}</option>
+          <option value="">{text("跟随模型默认", "Model default")}</option>
+          {efforts.map((effort) => (
+            <option key={effort} value={effort}>{text(...(EFFORT_LABELS[effort] ?? [effort, effort]))}</option>
           ))}
         </select>
       </label>
@@ -295,13 +234,4 @@ export function ProjectAutomationMenu({
       {menu}
     </>
   );
-}
-
-function formatResetTime(value: number, locale: string) {
-  return new Intl.DateTimeFormat(locale, {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value * 1_000));
 }

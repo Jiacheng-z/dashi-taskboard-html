@@ -2690,11 +2690,20 @@ export function App() {
             {selectedProjectId && (
               <ProjectAutomationMenu
                 automation={selectedProjectAutomation}
+                // 任务 10 接上 getAiChatCatalog()，在那之前下拉里只有「跟随默认」
+                models={[]}
                 pending={automationPending}
                 error={automationError}
                 unavailableReason={automationProjectContext.unavailableReason}
                 onOpen={() => void reconcileProjectAutomation()}
-                onChange={(options) => void saveProjectAutomation(options)}
+                // 任务 10 删掉这层适配：那时 saveProjectAutomation 直接吃新形状
+                onChange={(options) => void saveProjectAutomation({
+                  ...options,
+                  quotaAware: false,
+                  intervalMinutes: options.intervalMinutes as AutomationIntervalMinutes,
+                  model: (options.model ?? "gpt-5.5") as AutomationModel,
+                  reasoningEffort: (options.reasoningEffort ?? "high") as AutomationReasoningEffort,
+                })}
               />
             )}
             {isJiraProject && (

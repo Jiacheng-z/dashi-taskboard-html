@@ -66,7 +66,7 @@ test("the project navigation automation menu owns the icon, fields, and accessib
   assert.doesNotMatch(menuSource, /已开启自动认领|自动认领未开启/);
   assert.match(menuSource, /自动认领开关/);
   assert.match(menuSource, /5, 10, 15, 30, 60/);
-  assert.match(menuSource, /AUTOMATION_MODELS\.map/);
+  assert.match(menuSource, /models\.map/);
   assert.match(menuSource, /EFFORT_LABELS\[effort\]/);
   assert.match(menuSource, /createPortal/);
   assert.match(menuSource, /window\.addEventListener\("resize"/);
@@ -94,8 +94,10 @@ test("the automation menu reuses the board switches and keeps form focus chrome 
   assert.match(menuSource, /className=\{`board-setting-switch\$\{draft\.enabledByUser \? " is-on" : ""\}`\}/);
   assert.match(menuSource, /role="switch"/);
   assert.match(menuSource, /aria-checked=\{draft\.enabledByUser\}/);
-  assert.match(menuSource, /className=\{`board-setting-switch\$\{draft\.quotaAware \? " is-on" : ""\}`\}/);
-  assert.match(menuSource, /aria-checked=\{draft\.quotaAware\}/);
+  assert.doesNotMatch(menuSource, /quotaAware/);
+  assert.doesNotMatch(menuSource, /taskboard-automation-options/);
+  assert.doesNotMatch(menuSource, /gpt-5\.5/);
+  assert.match(menuSource, /models: AiChatModel\[\]/);
   assert.doesNotMatch(menuSource, /type="checkbox"/);
   assert.match(styles, /\.project-automation-field select:focus-visible\s*\{[^}]*outline:\s*0;[^}]*box-shadow:\s*none;/s);
   assert.doesNotMatch(styles, /\.project-automation-switch input:focus-visible/);
@@ -104,7 +106,7 @@ test("the automation menu reuses the board switches and keeps form focus chrome 
 test("unavailable automation state has one notice, clears stale errors, and cannot change", () => {
   assert.match(menuSource, /error && error !== unavailableReason/);
   assert.match(menuSource, /const disabled = pending \|\| Boolean\(unavailableReason\)/);
-  assert.equal(menuSource.match(/disabled=\{disabled\}/g)?.length, 5);
+  assert.equal(menuSource.match(/disabled=\{disabled\}/g)?.length, 4);
   const reconcileSource = appSource.slice(
     appSource.indexOf("const reconcileProjectAutomation"),
     appSource.indexOf("const saveProjectAutomation"),
@@ -120,9 +122,13 @@ test("automation changes submit immediately with model-specific effort normaliza
   assert.match(menuSource, /onChange: \(options: AutomationOptions\) => void/);
   assert.match(menuSource, /const disabled = pending \|\| Boolean\(unavailableReason\)/);
   assert.match(menuSource, /const submitChange = \(next: AutomationOptions\) => \{[\s\S]*?setDraft\(next\);[\s\S]*?onChange\(next\);[\s\S]*?\}/);
-  assert.match(menuSource, /submitChange\(withAutomationModel\(draft, event\.target\.value as AutomationModel\)\)/);
-  assert.match(menuSource, /getAutomationModel\(draft\.model\)\.efforts\.map/);
-  assert.match(menuSource, /<option key=\{effort\} value=\{effort\}>\{text\(\.\.\.EFFORT_LABELS\[effort\]\)\}<\/option>/);
+  assert.match(
+    menuSource,
+    /submitChange\(\{ \.\.\.draft, model: event\.target\.value \|\| null, reasoningEffort: null \}\)/,
+  );
+  assert.match(menuSource, /supportedReasoningEfforts/);
+  assert.match(menuSource, /defaultReasoningEffort/);
+  assert.doesNotMatch(menuSource, /withAutomationModel|getAutomationModel/);
   assert.match(menuSource, /low: \["轻度", "Low"\]/);
   assert.match(menuSource, /xhigh: \["极高 \(xhigh\)", "Extra high \(xhigh\)"\]/);
   assert.match(menuSource, /max: \["最高", "Maximum"\]/);
