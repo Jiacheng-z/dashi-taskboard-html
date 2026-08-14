@@ -17,10 +17,29 @@ import {
 } from "../web/src/aiChatState.ts";
 
 const appSource = await readFile(new URL("../web/src/App.tsx", import.meta.url), "utf8");
-const chatSource = await readFile(
-  new URL("../web/src/components/AiChat.tsx", import.meta.url),
-  "utf8",
-);
+const AI_CHAT_SOURCE_FILES = [
+  "../web/src/components/AiChat.tsx",
+  "../web/src/components/AiChatMessages.tsx",
+  "../web/src/components/ConversationView.tsx",
+  "../web/src/components/QuickChatPanel.tsx",
+  "../web/src/components/TaskConversationModal.tsx",
+];
+
+// 拆分期间这些文件是逐个出现的，缺文件按空串处理；
+// 断言的语义是「这段代码在 AI 对话组件族里存在」，不绑定具体落在哪个文件。
+async function readAiChatSource() {
+  const parts = await Promise.all(AI_CHAT_SOURCE_FILES.map(async (relative) => {
+    try {
+      return await readFile(new URL(relative, import.meta.url), "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") return "";
+      throw error;
+    }
+  }));
+  return parts.join("\n");
+}
+
+const chatSource = await readAiChatSource();
 const apiSource = await readFile(new URL("../web/src/api.ts", import.meta.url), "utf8");
 const taskConversationsSource = await readFile(
   new URL("../web/src/taskConversations.ts", import.meta.url),
