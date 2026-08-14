@@ -28,7 +28,9 @@ const STATUS_LABELS: Record<TaskboardLanguage, Record<TaskStatus, string>> = {
     todo: "等待认领",
     in_progress: "处理中",
     in_review: "等你确认",
-    blocked: "遇到阻碍",
+    // 底层枚举仍叫 blocked（扩 CHECK 约束要重建表），
+    // 语义已收窄为「agent 提了问题，在等你回答」，泳道位于「处理中」与「等你确认」之间
+    blocked: "等你回答",
     done: "完成",
     canceled: "取消",
   },

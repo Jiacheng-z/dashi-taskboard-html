@@ -10,6 +10,8 @@ import {
   type TaskboardIconName,
 } from "./TaskboardIcon";
 
+// label 字段目前没有任何代码读取（界面只用 .tone），仅供测试断言字面量；
+// 改这里不会改变界面显示，勿以为改了就生效
 export const STATUS_DETAILS: Record<
   TaskStatus,
   { label: string; tone: string }
@@ -18,7 +20,7 @@ export const STATUS_DETAILS: Record<
   todo: { label: "等待认领", tone: "todo" },
   in_progress: { label: "处理中", tone: "progress" },
   in_review: { label: "等你确认", tone: "review" },
-  blocked: { label: "遇到阻碍", tone: "blocked" },
+  blocked: { label: "等你回答", tone: "blocked" },
   done: { label: "完成", tone: "done" },
   canceled: { label: "取消", tone: "canceled" },
 };

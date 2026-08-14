@@ -8,7 +8,7 @@ const STATUS_LABELS = {
   todo: "待办",
   in_progress: "处理中",
   in_review: "等你确认",
-  blocked: "遇到阻碍",
+  blocked: "等你回答",
   done: "完成",
   canceled: "取消",
 };

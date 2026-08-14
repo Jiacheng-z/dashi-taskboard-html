@@ -98,7 +98,7 @@ test("the complete Linear-style workflow shares one ordered status source", () =
   assert.match(boardColumnSource, /todo: \{ label: "等待认领", tone: "todo" \}/);
   assert.match(boardColumnSource, /in_progress: \{ label: "处理中", tone: "progress" \}/);
   assert.match(boardColumnSource, /in_review: \{ label: "等你确认", tone: "review" \}/);
-  assert.match(boardColumnSource, /blocked: \{ label: "遇到阻碍", tone: "blocked" \}/);
+  assert.match(boardColumnSource, /blocked: \{ label: "等你回答", tone: "blocked" \}/);
   assert.match(boardColumnSource, /done: \{ label: "完成", tone: "done" \}/);
   assert.match(boardColumnSource, /canceled: \{ label: "取消", tone: "canceled" \}/);
   assert.doesNotMatch(cardSource, /STATUS_ORDER/);

@@ -32,7 +32,7 @@ test("the issue workspace projects the seven statuses into adaptive main and sec
   assert.match(appSource, /mainStatuses\.map\(\(status\) => \([\s\S]*?className="loading-column"/);
   assert.match(boardColumnSource, /todo: \{ label: "等待认领", tone: "todo" \}/);
   assert.match(boardColumnSource, /in_progress: \{ label: "处理中", tone: "progress" \}/);
-  assert.match(boardColumnSource, /blocked: \{ label: "遇到阻碍", tone: "blocked" \}/);
+  assert.match(boardColumnSource, /blocked: \{ label: "等你回答", tone: "blocked" \}/);
   assert.match(boardColumnSource, /in_review: \{ label: "等你确认", tone: "review" \}/);
 });
 

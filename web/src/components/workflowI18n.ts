@@ -13,7 +13,7 @@ const WORKFLOW_TRANSLATIONS: Readonly<Record<string, string>> = {
   "待办事项": "To do",
   "进行中": "In progress",
   "审核中": "In review",
-  "遇到阻碍": "Blocked",
+  "等你回答": "Blocked",
   "完成": "Done",
   "已取消": "Canceled",
   "无优先级": "No priority",
