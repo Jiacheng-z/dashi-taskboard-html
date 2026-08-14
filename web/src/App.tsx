@@ -2277,12 +2277,17 @@ export function App() {
 
   function openTaskConversation(conversation: TaskConversationItem) {
     if (conversation.kind === "local-ai") {
+      // local-ai 会话的 aiThreadId 在当前数据模型下恒非空（taskConversations.ts 里从 aiThreads 数组
+      // 生成，aiThreadId = thread.id）；为 null 时弹窗显示「任务尚无会话」空态，属有意为之。
       setTaskConversation({ threadId: conversation.aiThreadId });
       return;
     }
     if (conversation.nativeThreadId) openThread(conversation.nativeThreadId);
   }
 
+  // 注意：aiThreads 有两条写入路径 —— 面板 <AiChat onThreadsChange={setAiThreads}> 的同步 setter，
+  // 和这里的异步整表重拉。二者稳态收敛；「面板与弹窗同时开着且时序交错」时可能有极窄的 stale 覆盖，
+  // 属已知限制，留待阶段二把 thread 所有权上提到 App 一并解决。
   const refreshAiThreads = useCallback(async () => {
     try {
       setAiThreads(await listAiChatThreads());
