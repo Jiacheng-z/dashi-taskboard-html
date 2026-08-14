@@ -315,3 +315,19 @@ test("展示层组件独立成 AiChatMessages.tsx", async () => {
   // 真正要禁的是网络/订阅类副作用
   assert.doesNotMatch(messagesSource, /EventSource|fetch\(/);
 });
+
+test("AiChat.tsx 只是门面，外壳逻辑在 QuickChatPanel.tsx", async () => {
+  const facade = await readFile(
+    new URL("../web/src/components/AiChat.tsx", import.meta.url),
+    "utf8",
+  );
+  const shell = await readFile(
+    new URL("../web/src/components/QuickChatPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(facade.split("\n").length < 30, `门面应当很薄，实际 ${facade.split("\n").length} 行`);
+  assert.match(facade, /export \{ QuickChatPanel as AiChat \}/);
+  assert.match(shell, /export function QuickChatPanel\(/);
+  assert.match(shell, /LAST_THREAD_KEY/);
+  assert.match(shell, /<ConversationView/);
+});
