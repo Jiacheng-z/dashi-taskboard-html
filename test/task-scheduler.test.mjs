@@ -156,3 +156,20 @@ test("scheduler config falls back to defaults, then settings, then env", async (
     await fixture.close();
   }
 });
+
+test("claimTask 把 todo 推到 in_progress，版本冲突时返回 null", async () => {
+  const fixture = await createFixture();
+  try {
+    const task = fixture.createTodo("认领我");
+    const claimed = fixture.scheduler.claimTask(task);
+    assert.equal(claimed.status, "in_progress");
+    assert.equal(claimed.version, task.version + 1);
+
+    // 拿过期的 version 再认领一次：模拟另一个 scheduler 实例已抢走
+    assert.equal(fixture.scheduler.claimTask(task), null);
+    assert.equal(fixture.database.getTask(task.id).status, "in_progress");
+    assert.equal(fixture.database.getTask(task.id).version, task.version + 1);
+  } finally {
+    await fixture.close();
+  }
+});

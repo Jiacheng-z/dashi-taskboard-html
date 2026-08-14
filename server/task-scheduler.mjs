@@ -51,6 +51,23 @@ export class TaskScheduler {
     return resolveSchedulerConfig({ database: this.database, processEnv: this.processEnv });
   }
 
+  claimTask(task) {
+    try {
+      return this.database.moveTask(
+        task.id,
+        task.version,
+        "in_progress",
+        undefined,
+        null,
+        SCHEDULER_ACTOR,
+      );
+    } catch (error) {
+      // 另一个 scheduler 实例（或用户手动拖动）先改了这条 → 放弃，不重试
+      if (error?.code === "VERSION_CONFLICT") return null;
+      throw error;
+    }
+  }
+
   stop() {
     if (this.timer) {
       clearInterval(this.timer);
