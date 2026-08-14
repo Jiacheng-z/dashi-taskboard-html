@@ -93,3 +93,50 @@ test("scheduler reads running run count and the thread bound to an issue", async
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("project automation options default off and round-trip through the database", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "taskboard-settings-automation-"));
+  const database = new TaskboardDatabase(path.join(directory, "taskboard.sqlite"));
+  try {
+    database.createProject({ id: "p", name: "P", workspacePath: null });
+
+    assert.deepEqual(database.getProjectAutomation("p"), {
+      enabledByUser: false,
+      intervalMinutes: 5,
+      model: null,
+      reasoningEffort: null,
+    });
+
+    const saved = database.setProjectAutomation("p", {
+      enabledByUser: true,
+      intervalMinutes: 15,
+      model: "claude-opus",
+      reasoningEffort: "high",
+    });
+    assert.deepEqual(saved, {
+      enabledByUser: true,
+      intervalMinutes: 15,
+      model: "claude-opus",
+      reasoningEffort: "high",
+    });
+    assert.deepEqual(database.getProjectAutomation("p"), saved);
+    assert.deepEqual(
+      database.listProjectsWithAutomationEnabled().map((entry) => entry.projectId),
+      ["p"],
+    );
+
+    // 浅合并：只带一个字段不应该把其他字段冲掉
+    assert.equal(database.setProjectAutomation("p", { intervalMinutes: 30 }).model, "claude-opus");
+
+    database.setProjectAutomation("p", { enabledByUser: false });
+    assert.deepEqual(database.listProjectsWithAutomationEnabled(), []);
+
+    assert.throws(
+      () => database.getProjectAutomation("missing"),
+      (error) => error.code === "PROJECT_NOT_FOUND",
+    );
+  } finally {
+    database.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

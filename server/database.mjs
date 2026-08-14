@@ -21,6 +21,38 @@ function now() {
   return new Date().toISOString();
 }
 
+const DEFAULT_PROJECT_AUTOMATION = {
+  enabledByUser: false,
+  intervalMinutes: 5,
+  // model / reasoningEffort 为 null 表示「跟随后端 catalog 的默认值」，
+  // 不写死 codex 时代的 "gpt-5.5"（规格 §8.3）
+  model: null,
+  reasoningEffort: null,
+};
+
+function projectAutomationFromJson(raw) {
+  let parsed = null;
+  try {
+    parsed = raw === null || raw === undefined ? null : JSON.parse(raw);
+  } catch {}
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { ...DEFAULT_PROJECT_AUTOMATION };
+  }
+  const intervalMinutes = Number(parsed.intervalMinutes);
+  return {
+    enabledByUser: parsed.enabledByUser === true,
+    intervalMinutes: Number.isInteger(intervalMinutes) && intervalMinutes > 0
+      ? intervalMinutes
+      : DEFAULT_PROJECT_AUTOMATION.intervalMinutes,
+    model: typeof parsed.model === "string" && parsed.model.trim() ? parsed.model.trim() : null,
+    reasoningEffort: typeof parsed.reasoningEffort === "string" && parsed.reasoningEffort.trim()
+      ? parsed.reasoningEffort.trim()
+      : null,
+  };
+}
+
+export { DEFAULT_PROJECT_AUTOMATION };
+
 function commentConversationTitle(body) {
   const firstLine = String(body ?? "")
     .split(/\r?\n/)
@@ -536,6 +568,9 @@ export class TaskboardDatabase {
     const projectColumns = this.database.prepare("PRAGMA table_info(projects)").all();
     if (!projectColumns.some((column) => column.name === "workspace_path")) {
       this.database.exec("ALTER TABLE projects ADD COLUMN workspace_path TEXT");
+    }
+    if (!projectColumns.some((column) => column.name === "automation_options")) {
+      this.database.exec("ALTER TABLE projects ADD COLUMN automation_options TEXT");
     }
 
     const taskColumns = this.database.prepare("PRAGMA table_info(tasks)").all();
@@ -1106,6 +1141,42 @@ export class TaskboardDatabase {
       throw new ApiError(409, "PROJECT_NOT_EMPTY", "Project still contains issues", { issueCount });
     }
     return project;
+  }
+
+  getProjectAutomation(projectId) {
+    const row = this.database
+      .prepare("SELECT automation_options FROM projects WHERE id = ?").get(projectId);
+    if (!row) {
+      throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectId}' does not exist`);
+    }
+    return projectAutomationFromJson(row.automation_options);
+  }
+
+  setProjectAutomation(projectId, changes) {
+    const current = this.getProjectAutomation(projectId);
+    const next = { ...current, ...changes };
+    const result = this.database.prepare(`
+      UPDATE projects SET automation_options = ?, updated_at = ? WHERE id = ?
+    `).run(JSON.stringify(next), now(), projectId);
+    if (result.changes !== 1) {
+      throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectId}' does not exist`);
+    }
+    return this.getProjectAutomation(projectId);
+  }
+
+  listProjectsWithAutomationEnabled() {
+    return this.database.prepare(`
+      SELECT id, name, workspace_path, automation_options FROM projects
+      WHERE automation_options IS NOT NULL
+      ORDER BY id
+    `).all()
+      .map((row) => ({
+        projectId: row.id,
+        projectName: row.name,
+        workspacePath: row.workspace_path,
+        automation: projectAutomationFromJson(row.automation_options),
+      }))
+      .filter((entry) => entry.automation.enabledByUser);
   }
 
   getProject(id) {
