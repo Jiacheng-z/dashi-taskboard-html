@@ -1,14 +1,6 @@
 import { buildAgentTaskPrompt } from "../shared/agent-task-prompt.mjs";
 import { buildTaskctlCommand } from "../shared/taskboard-automation.mjs";
-
-export const SCHEDULER_ACTOR = {
-  type: "agent",
-  // 与 app.mjs 的 CODEX_AGENT_ACTOR 保持同一个 wire 值：assignee 过滤、
-  // 历史评论的 actor.id 都认这个字符串，换 backend 也不能换它（见「与规格的偏离」）
-  id: "codex-agent",
-  name: "Codex Agent",
-  avatarUrl: null,
-};
+import { AGENT_ACTOR } from "../shared/agent-actor.mjs";
 
 const DEFAULT_CONCURRENCY = 2;
 const DEFAULT_INTERVAL_MS = 300_000;
@@ -59,7 +51,7 @@ export class TaskScheduler {
         "in_progress",
         undefined,
         null,
-        SCHEDULER_ACTOR,
+        AGENT_ACTOR,
       );
     } catch (error) {
       // 另一个 scheduler 实例（或用户手动拖动）先改了这条 → 放弃，不重试
@@ -130,7 +122,7 @@ export class TaskScheduler {
     this.database.createComment(task.id, {
       body: `⚠️ 执行未完成\n\n${details}\n\nagent 退出时这条任务仍停在「处理中」，已自动移到「等你确认」，请人工看一眼。`,
       threadId: null,
-      actor: SCHEDULER_ACTOR,
+      actor: AGENT_ACTOR,
     });
 
     const fresh = this.database.getTask(task.id);
@@ -140,7 +132,7 @@ export class TaskScheduler {
       "in_review",
       undefined,
       null,
-      SCHEDULER_ACTOR,
+      AGENT_ACTOR,
     );
   }
 

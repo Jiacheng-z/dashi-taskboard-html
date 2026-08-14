@@ -19,6 +19,7 @@ import {
 import { resolveCodexExecutable } from "../shared/codex-executable.mjs";
 import { withoutTaskboardLauncherEnvironment } from "../shared/codex-environment.mjs";
 import { normalizeWorkflowSnapshot } from "../shared/workflow-control-flow.mjs";
+import { AGENT_ACTOR } from "../shared/agent-actor.mjs";
 import { AiChatService } from "./ai-chat.mjs";
 import { agentBackendIds, DEFAULT_AGENT_BACKEND } from "./agent-backends/index.mjs";
 import { resolveAiWorkspace, resolveMappedAiWorkspace } from "./ai-chat-catalog.mjs";
@@ -54,12 +55,6 @@ const INLINE_ATTACHMENT_TYPES = new Set([
 ]);
 const PROJECT_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const TRUSTED_EMBED_ORIGINS = new Set(["app://-"]);
-const CODEX_AGENT_ACTOR = {
-  type: "agent",
-  id: "codex-agent",
-  name: "Codex Agent",
-  avatarUrl: null,
-};
 const CONTENT_TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
   [".html", "text/html; charset=utf-8"],
@@ -514,7 +509,7 @@ function requestHeader(request, name) {
 
 function actorFromRequest(request) {
   if (request.headers["x-taskboard-client"] === "taskctl") {
-    return CODEX_AGENT_ACTOR;
+    return AGENT_ACTOR;
   }
 
   const rawId = requestHeader(request, "x-taskboard-user-id");
@@ -566,7 +561,7 @@ function parseAssigneeTarget(value) {
 
 function resolveAssignee(target, actor) {
   if (target === undefined) return actor;
-  if (target === "codex-agent") return CODEX_AGENT_ACTOR;
+  if (target === "codex-agent") return AGENT_ACTOR;
   if (actor.type !== "user") {
     throw new ApiError(400, "INVALID_FIELD", "'current-user' requires a user request identity");
   }

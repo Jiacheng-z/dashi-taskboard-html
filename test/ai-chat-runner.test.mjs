@@ -428,3 +428,42 @@ test("startup marks abandoned runs interrupted while preserving the Codex thread
     await fixture.close();
   }
 });
+
+test("在等你确认状态下追问会把任务拉回处理中", async () => {
+  const fixture = await createFixture();
+  try {
+    const actor = { type: "user", id: "reviewer", name: "Reviewer", avatarUrl: null };
+    const task = fixture.database.createTask({
+      projectId: "project",
+      title: "改一下配色",
+      description: "",
+      status: "in_review",
+      priority: "none",
+      labels: [],
+      threadId: null,
+      actor,
+      assignee: actor,
+      workflowId: null,
+      developmentContext: null,
+      startDate: null,
+      dueDate: null,
+      recurrence: null,
+    });
+    const thread = await fixture.service.createThread({
+      projectId: "project",
+      issueId: task.id,
+    });
+
+    const run = await fixture.service.startTurn(thread.id, { message: "标题再大一号" });
+    await waitFor(() => fixture.service.getRun(run.id)?.status !== "running");
+
+    assert.equal(fixture.database.getTask(task.id).status, "in_progress");
+    const notice = fixture.service.getThreadSnapshot(thread.id).events.find(
+      (event) => event.data?.taskReopened,
+    );
+    assert.equal(notice.role, "activity");
+    assert.match(notice.content, /处理中/);
+  } finally {
+    await fixture.close();
+  }
+});

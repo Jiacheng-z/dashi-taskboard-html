@@ -7,6 +7,7 @@ import { resolveAiWorkspace } from "./ai-chat-catalog.mjs";
 import { spawnCodexTurn } from "./ai-chat-process.mjs";
 import { DEFAULT_AGENT_BACKEND, resolveAgentBackend } from "./agent-backends/index.mjs";
 import { spawnGate } from "./agent-backends/spawn-gate.mjs";
+import { AGENT_ACTOR } from "../shared/agent-actor.mjs";
 
 const SANDBOXES = new Set(["read-only", "workspace-write", "danger-full-access"]);
 const ERROR_CONTENT_LIMIT = 65_536;
@@ -339,6 +340,35 @@ export class AiChatService {
           data: { status: "completed", backendSwitch: { from: staleBackend, to: backend.id } },
         });
         this.#emit(threadId, { type: "ai.event", event: notice });
+      }
+
+      const boundIssueId = thread.origin?.issueId ?? null;
+      if (boundIssueId) {
+        const issue = this.database.getTask(boundIssueId);
+        // 用户在「等你确认」里追问 = 要 agent 接着改，把任务拉回「处理中」（规格 §7.5 路径 A）。
+        // 这里是同步读改，中间没有 await，不会撞版本号。
+        if (issue && issue.status === "in_review" && issue.archivedAt == null) {
+          const reopened = this.database.moveTask(
+            issue.id,
+            issue.version,
+            "in_progress",
+            undefined,
+            null,
+            AGENT_ACTOR,
+          );
+          const notice = this.database.insertAiChatEvent({
+            threadId,
+            runId: run.id,
+            type: "agent_message",
+            role: "activity",
+            content: `任务 ${reopened.identifier} 已从「等你确认」移回「处理中」。`,
+            data: {
+              status: "completed",
+              taskReopened: { taskId: reopened.id, from: "in_review", to: "in_progress" },
+            },
+          });
+          this.#emit(threadId, { type: "ai.event", event: notice });
+        }
       }
 
       const resumingThreadId = thread.codexThreadId;
