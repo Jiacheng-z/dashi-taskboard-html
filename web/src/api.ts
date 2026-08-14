@@ -13,6 +13,7 @@ import type {
   IssueRelationType,
   JiraConnection,
   Project,
+  ProjectAutomation,
   ProjectSummary,
   Task,
   TaskChangeActivity,
@@ -408,6 +409,27 @@ export async function deleteProject(projectId: string): Promise<void> {
   await request(`/api/projects/${encodeURIComponent(projectId)}`, {
     method: "DELETE",
   });
+}
+
+export async function getProjectAutomation(projectId: string): Promise<ProjectAutomation> {
+  const data = await request<{ automation: ProjectAutomation }>(
+    `/api/projects/${encodeURIComponent(projectId)}/automation`,
+  );
+  return data.automation;
+}
+
+export async function updateProjectAutomation(
+  projectId: string,
+  changes: Partial<ProjectAutomation>,
+): Promise<ProjectAutomation> {
+  const data = await request<{ automation: ProjectAutomation }>(
+    `/api/projects/${encodeURIComponent(projectId)}/automation`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    },
+  );
+  return data.automation;
 }
 
 export async function listDevelopmentContexts(

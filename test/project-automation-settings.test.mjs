@@ -173,3 +173,17 @@ test("opening settings and changing projects reconcile with the host list", () =
   assert.match(appSource, /automationId: undefined,[\s\S]*?status: "PAUSED"/);
   assert.match(drainSource, /writeProjectAutomation\(queuedSave\.projectId, previousRecord\)/);
 });
+
+test("自动化配置走 HTTP 接口而不是 host message", async () => {
+  const apiText = await readFile(new URL("../web/src/api.ts", import.meta.url), "utf8");
+  assert.match(apiText, /export async function getProjectAutomation\(/);
+  assert.match(apiText, /export async function updateProjectAutomation\(/);
+  assert.match(apiText, /\/api\/projects\/\$\{encodeURIComponent\(projectId\)\}\/automation/);
+  assert.match(apiText, /method: "PATCH"/);
+  const typesText = await readFile(new URL("../web/src/types.ts", import.meta.url), "utf8");
+  assert.match(typesText, /export interface ProjectAutomation \{/);
+  for (const field of ["enabledByUser", "intervalMinutes", "model", "reasoningEffort"]) {
+    assert.match(typesText, new RegExp(`${field}:`));
+  }
+  assert.doesNotMatch(typesText, /quotaAware/);
+});
