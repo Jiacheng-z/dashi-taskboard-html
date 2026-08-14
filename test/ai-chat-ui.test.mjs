@@ -22,6 +22,10 @@ const chatSource = await readFile(
   "utf8",
 );
 const apiSource = await readFile(new URL("../web/src/api.ts", import.meta.url), "utf8");
+const taskConversationsSource = await readFile(
+  new URL("../web/src/taskConversations.ts", import.meta.url),
+  "utf8",
+);
 const styles = await readFile(new URL("../web/src/styles.css", import.meta.url), "utf8");
 
 const models = [
@@ -233,4 +237,16 @@ test("history exposes deletion of local records without adding rename controls",
   assert.match(chatSource, /aria-label=\{text\(`删除对话 \$\{thread\.title\}`, `Delete chat \$\{thread\.title\}`\)\}/);
   assert.match(chatSource, /window\.confirm\(text\(\s*`删除本地对话“\$\{thread\.title\}”？`,\s*`Delete local chat “\$\{thread\.title\}”\?`,\s*\)\)/);
   assert.doesNotMatch(chatSource, /重命名对话|renameAiChatThread/);
+});
+
+test("card progress comes from the AI thread todo state instead of Codex session files", () => {
+  assert.equal(apiSource.includes("codex-thread-progress"), false);
+  assert.equal(appSource.includes("getCodexThreadProgress"), false);
+  assert.equal(appSource.includes("codexThreadProgress"), false);
+  assert.equal(taskConversationsSource.includes("taskNativeSession"), false);
+  // 卡片进度只剩 5 个入参：task / aiThreads / unread / hostContext 的两个
+  assert.match(
+    appSource,
+    /taskCardPresentation\(\s*task,\s*aiThreads,\s*unread,\s*runningNativeThreadId,\s*hostContext\?\.threadTodoProgress \?\? null,\s*\)/,
+  );
 });

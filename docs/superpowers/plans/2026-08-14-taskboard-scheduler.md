@@ -46,7 +46,7 @@ git -c user.name="taskboard-local" -c user.email="taskboard-local@localhost" com
 |---|---|---|
 | `app.mjs:1041-1091` 猜 workspace | `codexProjectRoot` / `readCodexProjectWorkspaces` 服务 `GET /api/device-workspaces`，前端 `listDeviceWorkspaces` 在用，`test/server.test.mjs` 有用例 | **只删** `latestThreadCwd` + `resolveProjectWorkspace` 的猜测链（任务 14），保留前两个函数 |
 | `discoverSkills`/`discoverMcpServers` → 收进 adapter | `/api/workflow-capabilities` **有前端调用者**（`WorkflowBoard.tsx:517`），5 个测试 | 路由保留，实现改走 adapter（任务 15），adapter 新增第 9 个字段 `discoverMcpServers` |
-| `findCodexSession`/`readCodexSessionState` → 删 | 路由 `/api/local/codex-thread-progress` 被 `web/src/App.tsx:1826` 每 2s 调一次，喂卡片进度条 | 路由与响应形状**原样保留**，实现改读 `ai_chat_threads.latestTodo` + `currentRun`（任务 16），前端零改动 |
+| `findCodexSession`/`readCodexSessionState` → 删 | 路由 `/api/local/codex-thread-progress` 被 `web/src/App.tsx:1826` 每 2s 调一次，喂卡片进度条 | 路由**一起删**：入参 `task.threadId` 只有 codex app 会写，调度器不写；`taskCardPresentation` 已有等价的 `latestTodo` 链路（`web/src/taskConversations.ts:141`），前端顺带删掉轮询（任务 16） |
 | `CODEX_AGENT_ACTOR` 按 backend 取值 | `id: "codex-agent"` 是 wire 值：`parseAssigneeTarget`（`app.mjs:560`）校验它、前端发它、历史 task/comment 行的 `actor.id` 已经存了它 | **不做。** 按 backend 取值会让同一个逻辑 actor 在库里出现两种 id，assignee 过滤直接错，收益为零 |
 
 另外规格 §8.4 没提但顺带核实过的一处：`resolveAiWorkspace`（`server/ai-chat-catalog.mjs:83`）也读 codex state 文件，但它已有 `projects.workspace_path` 兜底 —— 脱离 codex app 后只是那份 state 读不到、静默返回空，功能不受影响。**不动。**

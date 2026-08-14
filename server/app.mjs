@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { chmod, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { isIP } from "node:net";
 import os from "node:os";
@@ -43,7 +43,6 @@ const AI_CHAT_TURN_BODY_LIMIT = 25 * 1024 * 1024;
 const AI_CHAT_ATTACHMENT_LIMIT = 10;
 const AI_CHAT_SKILL_MARKER = "\uFFFC";
 const HOST_RUNTIME_TTL_MS = 3_000;
-const CODEX_PLAN_TAIL_BYTES = 16 * 1024 * 1024;
 const INLINE_ATTACHMENT_TYPES = new Set([
   "application/pdf",
   "image/avif",
@@ -1346,125 +1345,7 @@ export function createTaskboardServer(options = {}) {
     workspacePath: PROJECT_ROOT,
   });
   const aiEventResponses = new Set();
-  const codexSessionSearches = new Map();
-  const codexSessionStateCache = new Map();
-  const codexSessionsDirectory = path.join(path.dirname(resolved.codexStatePath), "sessions");
   let hostRuntime = null;
-
-  async function findCodexSession(threadId) {
-    const cached = codexSessionSearches.get(threadId);
-    if (cached && (cached.path || Date.now() - cached.checkedAt < 5_000)) return cached.path;
-
-    const suffix = `-${threadId}.jsonl`;
-    const directories = [codexSessionsDirectory];
-    while (directories.length > 0) {
-      const directory = directories.pop();
-      let entries;
-      try {
-        entries = await readdir(directory, { withFileTypes: true });
-      } catch (error) {
-        if (error.code === "ENOENT") continue;
-        throw error;
-      }
-      for (const entry of entries) {
-        const entryPath = path.join(directory, entry.name);
-        if (entry.isDirectory()) {
-          directories.push(entryPath);
-        } else if (entry.isFile() && entry.name.endsWith(suffix)) {
-          codexSessionSearches.set(threadId, { path: entryPath, checkedAt: Date.now() });
-          return entryPath;
-        }
-      }
-    }
-
-    codexSessionSearches.set(threadId, { path: null, checkedAt: Date.now() });
-    return null;
-  }
-
-  async function readCodexSessionState(threadId) {
-    const sessionPath = await findCodexSession(threadId);
-    if (!sessionPath) return null;
-
-    const sessionStat = await stat(sessionPath);
-    const cached = codexSessionStateCache.get(sessionPath);
-    if (cached?.size === sessionStat.size && cached.mtimeMs === sessionStat.mtimeMs) {
-      return cached.state;
-    }
-
-    const length = Math.min(sessionStat.size, CODEX_PLAN_TAIL_BYTES);
-    const buffer = Buffer.alloc(length);
-    const handle = await open(sessionPath, "r");
-    try {
-      await handle.read(buffer, 0, length, sessionStat.size - length);
-    } finally {
-      await handle.close();
-    }
-
-    const lines = buffer.toString("utf8").split("\n");
-    if (length < sessionStat.size) lines.shift();
-    const records = [];
-    for (const line of lines) {
-      try {
-        records.push(JSON.parse(line));
-      } catch {}
-    }
-
-    let runningTurnId = null;
-    for (const record of records) {
-      const payload = record?.payload;
-      if (record?.type !== "event_msg" || typeof payload?.turn_id !== "string") continue;
-      if (payload.type === "task_started") runningTurnId = payload.turn_id;
-      if (
-        (payload.type === "task_complete" || payload.type === "turn_aborted")
-        && payload.turn_id === runningTurnId
-      ) {
-        runningTurnId = null;
-      }
-    }
-
-    let progress = null;
-    for (let index = records.length - 1; index >= 0; index -= 1) {
-      const record = records[index];
-      const payload = record?.payload;
-      if (payload?.type !== "custom_tool_call" || typeof payload.input !== "string") continue;
-
-      let statuses = [];
-      if (payload.name === "update_plan") {
-        try {
-          const input = JSON.parse(payload.input);
-          statuses = Array.isArray(input.plan)
-            ? input.plan.map((item) => item?.status).filter(Boolean)
-            : [];
-        } catch {}
-      } else if (payload.name === "exec") {
-        const callIndex = payload.input.lastIndexOf("tools.update_plan(");
-        if (callIndex < 0) continue;
-        statuses = [...payload.input.slice(callIndex).matchAll(
-          /["']?status["']?\s*:\s*["'](completed|in_progress|pending)["']/g,
-        )].map((match) => match[1]);
-      }
-
-      if (statuses.length > 0) {
-        progress = {
-          completed: statuses.filter((status) => status === "completed").length,
-          total: statuses.length,
-        };
-        break;
-      }
-    }
-
-    const state = {
-      completed: progress?.completed ?? null,
-      total: progress?.total ?? null,
-      running: runningTurnId !== null,
-    };
-    codexSessionStateCache.set(sessionPath, {
-      size: sessionStat.size,
-      mtimeMs: sessionStat.mtimeMs,
-      state,
-    });
-    return state;
-  }
 
   const server = createServer(async (request, response) => {
     response.setHeader("x-content-type-options", "nosniff");
@@ -1562,25 +1443,6 @@ export function createTaskboardServer(options = {}) {
           return sendEmpty(response, 204);
         }
         return methodNotAllowed(response, ["GET", "PATCH"]);
-      }
-
-      if (pathname === "/api/local/codex-thread-progress") {
-        if (request.method !== "GET") return methodNotAllowed(response, ["GET"]);
-        if ([...url.searchParams.keys()].some((key) => key !== "threadId")) {
-          throw new ApiError(400, "UNKNOWN_QUERY_PARAMETER", "Only 'threadId' is supported");
-        }
-        const threadIds = [...new Set(url.searchParams.getAll("threadId").map((value) => (
-          value.trim().replace(/^(?:local|cloud):/i, "")
-        )))];
-        if (threadIds.length > 64 || threadIds.some((threadId) => (
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)
-        ))) {
-          throw new ApiError(400, "INVALID_FIELD", "'threadId' must contain valid Codex thread IDs");
-        }
-        const entries = await Promise.all(threadIds.map(async (threadId) => (
-          [threadId, await readCodexSessionState(threadId)]
-        )));
-        return sendJson(response, 200, { progress: Object.fromEntries(entries) });
       }
 
       if (pathname === "/api/local/host-runtime") {

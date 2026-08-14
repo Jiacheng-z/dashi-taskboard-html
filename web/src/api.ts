@@ -205,22 +205,6 @@ export async function getHostRuntime(signal?: AbortSignal): Promise<HostContext 
   return data.runtime;
 }
 
-export async function getCodexThreadProgress(
-  threadIds: string[],
-  signal?: AbortSignal,
-): Promise<Record<string, { completed: number | null; total: number | null; running: boolean } | null>> {
-  const query = new URLSearchParams();
-  for (const threadId of threadIds) query.append("threadId", threadId);
-  const data = await request<{
-    progress: Record<string, {
-      completed: number | null;
-      total: number | null;
-      running: boolean;
-    } | null>;
-  }>(`/api/local/codex-thread-progress?${query}`, { signal });
-  return data.progress;
-}
-
 export async function publishHostRuntime(context: HostContext): Promise<void> {
   if (!context.threadId || context.threadRunning === undefined) return;
   await request("/api/local/host-runtime", {

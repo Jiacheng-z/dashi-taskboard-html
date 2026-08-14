@@ -2117,3 +2117,13 @@ test("本地自动化脚本单次执行会打到 scheduler tick 接口", async (
   assert.match(output, /started=0/);
   assert.match(output, /concurrency=/);
 });
+
+test("the Codex session-file progress route is gone", async () => {
+  const baseUrl = await startServer();
+  const missing = await request(
+    baseUrl,
+    "/api/local/codex-thread-progress?threadId=11111111-2222-3333-4444-555555555555",
+  );
+  assert.equal(missing.response.status, 404);
+  assert.equal(missing.body.error.code, "NOT_FOUND");
+});

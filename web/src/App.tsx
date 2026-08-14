@@ -29,7 +29,6 @@ import {
   deleteArchivedTask as deleteArchivedTaskRequest,
   deleteProjectLabel as deleteProjectLabelRequest,
   deleteProject as deleteProjectRequest,
-  getCodexThreadProgress,
   getHostRuntime,
   getJiraConnection,
   getTaskboardRevision,
@@ -91,7 +90,6 @@ import {
   type OtherTaskTab,
 } from "./issueBoardStatuses";
 import {
-  normalizeCodexThreadId,
   taskCardPresentation,
   type TaskCardPresentation,
   type TaskConversationItem,
@@ -636,13 +634,6 @@ export function App() {
   const [aiThreads, setAiThreads] = useState<AiChatThread[]>([]);
   const [aiOpenThreadRequest, setAiOpenThreadRequest] = useState<AiChatOpenThreadRequest | null>(null);
   const [readActivityKeys, setReadActivityKeys] = useState<Record<string, string>>({});
-  const [codexThreadProgress, setCodexThreadProgress] = useState<
-    Record<string, {
-      completed: number | null;
-      total: number | null;
-      running: boolean;
-    } | null>
-  >({});
   const [processingNow, setProcessingNow] = useState(() => Date.now());
   const [recentProjectIds, setRecentProjectIds] = useState(readRecentProjectIds);
   const initialProjectId = query.get("project") ?? recentProjectIds[0] ?? GLOBAL_PROJECT_ID;
@@ -1802,36 +1793,6 @@ export function App() {
   const activeFilterCount = taskFilterCount(filters);
   const hasActiveTaskFilters = Boolean(search.trim()) || activeFilterCount > 0;
 
-  const trackedCodexThreadIds = useMemo(() => [...new Set(tasks
-    .filter((task) => task.status === "in_progress" && task.threadId)
-    .map((task) => normalizeCodexThreadId(task.threadId))
-    .filter(Boolean))].sort(), [tasks]);
-  const trackedCodexThreadIdsKey = trackedCodexThreadIds.join(",");
-
-  useEffect(() => {
-    if (trackedCodexThreadIds.length === 0) {
-      setCodexThreadProgress({});
-      return;
-    }
-    let disposed = false;
-    const sync = async () => {
-      try {
-        const progress = await getCodexThreadProgress(trackedCodexThreadIds);
-        if (!disposed) {
-          setCodexThreadProgress((current) => (
-            JSON.stringify(current) === JSON.stringify(progress) ? current : progress
-          ));
-        }
-      } catch {}
-    };
-    void sync();
-    const timer = window.setInterval(sync, 2_000);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-    };
-  }, [trackedCodexThreadIdsKey]);
-
   const tasksByStatus = useMemo(() => {
     return Object.fromEntries(
       TASK_STATUSES.map((status) => [status, filteredTasks.filter((task) => task.status === status)]),
@@ -1853,18 +1814,15 @@ export function App() {
     const runningNativeThreadId = hostContext?.threadRunning
       ? hostContext.threadId ?? null
       : null;
-    const taskThreadId = normalizeCodexThreadId(task.threadId);
     return [task.id, taskCardPresentation(
       task,
       aiThreads,
       unread,
       runningNativeThreadId,
       hostContext?.threadTodoProgress ?? null,
-      taskThreadId ? codexThreadProgress[taskThreadId] ?? null : undefined,
     )];
   })) as Record<string, TaskCardPresentation>, [
     aiThreads,
-    codexThreadProgress,
     hostContext?.threadId,
     hostContext?.threadRunning,
     hostContext?.threadTodoProgress,
