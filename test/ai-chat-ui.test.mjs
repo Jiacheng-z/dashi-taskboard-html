@@ -269,3 +269,24 @@ test("card progress comes from the AI thread todo state instead of Codex session
     /taskCardPresentation\(\s*task,\s*aiThreads,\s*unread,\s*runningNativeThreadId,\s*hostContext\?\.threadTodoProgress \?\? null,\s*\)/,
   );
 });
+
+test("展示层组件独立成 AiChatMessages.tsx", async () => {
+  const messagesSource = await readFile(
+    new URL("../web/src/components/AiChatMessages.tsx", import.meta.url),
+    "utf8",
+  );
+  for (const name of [
+    "SkillReference",
+    "MarkdownMessage",
+    "ThinkingStepDetail",
+    "ThinkingSteps",
+    "EventAttachments",
+    "MessageTimeline",
+    "OptionMenu",
+  ]) {
+    assert.match(messagesSource, new RegExp(`export function ${name}\\(`));
+  }
+  // 展示组件里允许 useEffect（如 ThinkingSteps 的手风琴 active→isOpen 同步），
+  // 真正要禁的是网络/订阅类副作用
+  assert.doesNotMatch(messagesSource, /EventSource|fetch\(/);
+});
