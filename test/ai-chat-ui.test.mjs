@@ -350,3 +350,26 @@ test("任务对话弹窗是居中遮罩层，复用 ConversationView", async () 
   assert.match(styles, /height:\s*85vh/);
   assert.match(appSource, /<TaskConversationModal/);
 });
+
+test("只有弹窗在跑动中锁输入框，快捷面板不受影响", async () => {
+  const viewSource = await readFile(
+    new URL("../web/src/components/ConversationView.tsx", import.meta.url),
+    "utf8",
+  );
+  const shellSource = await readFile(
+    new URL("../web/src/components/QuickChatPanel.tsx", import.meta.url),
+    "utf8",
+  );
+  const modalSource = await readFile(
+    new URL("../web/src/components/TaskConversationModal.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    viewSource,
+    /const composerBlocked = Boolean\(\s*\(threadId && deleting\)\s*\|\|\s*\(readOnlyWhileRunning && currentRun\?\.status === "running"\),?\s*\);/,
+  );
+  // currentRun 必须在 composerBlocked 之前算出来
+  assert.ok(viewSource.indexOf("const currentRun") < viewSource.indexOf("const composerBlocked"));
+  assert.match(modalSource, /readOnlyWhileRunning\s*$|readOnlyWhileRunning\}/m);
+  assert.doesNotMatch(shellSource, /readOnlyWhileRunning/);
+});

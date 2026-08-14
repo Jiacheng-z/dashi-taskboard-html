@@ -454,6 +454,7 @@ export function ConversationView({
   issueId,
   threadId,
   deleting,
+  readOnlyWhileRunning,
   error,
   initialComposerText,
   onError,
@@ -650,7 +651,9 @@ export function ConversationView({
     ?? snapshot?.runs.find((run) => run.status === "running")
     ?? null;
   const visibleError = error ?? catalogError;
-  const composerBlocked = Boolean(threadId && deleting);
+  const composerBlocked = Boolean(
+    (threadId && deleting) || (readOnlyWhileRunning && currentRun?.status === "running"),
+  );
   const sendBlocked = loading
     || settingsSaving
     || composerBlocked
