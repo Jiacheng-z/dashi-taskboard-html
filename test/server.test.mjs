@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { access, chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
@@ -6,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { createTaskboardServer } from "../server/index.mjs";
 
@@ -2062,4 +2064,32 @@ test("project automation options round-trip over HTTP", async () => {
     method: "DELETE",
   });
   assert.equal(wrongMethod.response.status, 405);
+});
+
+test("本地自动化脚本单次执行会打到 scheduler tick 接口", async () => {
+  const baseUrl = await startServer();
+  const script = fileURLToPath(new URL("../scripts/taskboard-automation-local.mjs", import.meta.url));
+  const output = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [script], {
+      env: {
+        ...process.env,
+        CODEX_TASKBOARD_URL: baseUrl,
+        // 0 = 只跑一轮就退出，测试不能挂在定时器上
+        TASKBOARD_INTERVAL_MS: "0",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`exit ${code}: ${stderr}`));
+    });
+  });
+  // 没有任何项目开自动化 → started=0，但接口必须真的通了
+  assert.match(output, /started=0/);
+  assert.match(output, /concurrency=/);
 });
