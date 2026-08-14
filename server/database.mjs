@@ -1434,6 +1434,22 @@ export class TaskboardDatabase {
     return row ? aiChatRunFromRow(row) : null;
   }
 
+  countRunningAiChatRuns() {
+    return Number(this.database.prepare(`
+      SELECT COUNT(*) AS running FROM ai_chat_runs WHERE status = 'running'
+    `).get().running);
+  }
+
+  findAiChatThreadByIssueId(issueId) {
+    const row = this.database.prepare(`
+      SELECT * FROM ai_chat_threads
+      WHERE origin_issue_id = ?
+      ORDER BY updated_at DESC, id
+      LIMIT 1
+    `).get(issueId);
+    return row ? this.#aiChatThreadWithCurrentRun(row) : null;
+  }
+
   createAiChatRun(input) {
     const id = input.id ?? randomUUID();
     const timestamp = input.startedAt ?? now();
