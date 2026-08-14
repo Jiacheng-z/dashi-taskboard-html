@@ -68,6 +68,19 @@ export class TaskScheduler {
     }
   }
 
+  async ensureThread(task, automation) {
+    const existing = this.database.findAiChatThreadByIssueId(task.id);
+    // 跨 backend 不能 resume 的处理在 startTurn 里（server/ai-chat.mjs:292-299），此处不重复
+    if (existing) return existing;
+    return this.aiChat.createThread({
+      projectId: task.projectId,
+      issueId: task.id,
+      // automation 里这两项默认是 null，null 会被 #requireKnownModel 判为非法，必须条件展开
+      ...(automation.model ? { model: automation.model } : {}),
+      ...(automation.reasoningEffort ? { reasoningEffort: automation.reasoningEffort } : {}),
+    });
+  }
+
   stop() {
     if (this.timer) {
       clearInterval(this.timer);

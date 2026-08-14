@@ -39,7 +39,21 @@ if (args[0] === "debug" && args[1] === "models") {
   process.exit(0);
 }
 if (args[0] === "mcp" && args[1] === "list") { process.stdout.write("[]"); process.exit(0); }
-if (args[0] === "app-server") { process.stdin.resume(); }
+if (args[0] === "app-server") {
+  process.stdin.setEncoding("utf8");
+  let buffer = "";
+  process.stdin.on("data", (chunk) => {
+    buffer += chunk;
+    let index;
+    while ((index = buffer.indexOf("\\n")) >= 0) {
+      const line = buffer.slice(0, index); buffer = buffer.slice(index + 1);
+      if (!line.trim()) continue;
+      const message = JSON.parse(line);
+      if (message.id === 1) process.stdout.write('{"id":1,"result":{"platformFamily":"unix"}}\\n');
+      if (message.id === 2) process.stdout.write('{"id":2,"result":{"data":[]}}\\n');
+    }
+  });
+}
 else if (args[0] === "exec") {
   process.stdin.setEncoding("utf8");
   let prompt = "";
@@ -169,6 +183,28 @@ test("claimTask 把 todo 推到 in_progress，版本冲突时返回 null", async
     assert.equal(fixture.scheduler.claimTask(task), null);
     assert.equal(fixture.database.getTask(task.id).status, "in_progress");
     assert.equal(fixture.database.getTask(task.id).version, task.version + 1);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("每条任务各自建 thread，已绑定的任务复用原 thread", async () => {
+  const fixture = await createFixture();
+  try {
+    const automation = { model: null, reasoningEffort: null };
+    const first = fixture.createTodo("任务甲");
+    const second = fixture.createTodo("任务乙");
+
+    const threadA = await fixture.scheduler.ensureThread(first, automation);
+    const threadB = await fixture.scheduler.ensureThread(second, automation);
+    assert.notEqual(threadA.id, threadB.id);
+    assert.equal(threadA.origin.issueId, first.id);
+    assert.equal(threadB.origin.issueId, second.id);
+
+    // 同一条任务再来一轮（规格 §7.5 路径 B：人手拖回 todo）→ 复用而非新建
+    const again = await fixture.scheduler.ensureThread(first, automation);
+    assert.equal(again.id, threadA.id);
+    assert.equal(fixture.database.listAiChatThreads().length, 2);
   } finally {
     await fixture.close();
   }
