@@ -31,6 +31,7 @@
     "typecheck": "tsc -p web/tsconfig.json --noEmit",
     "start": "node server/index.mjs",
     "taskctl": "node cli/taskctl.mjs",
+    "taskboard:automation": "node scripts/taskboard-automation-local.mjs",
     "test": "node --test",
     "test:cloud": "node --test test/cloud-shared-worker.test.mjs",
     "cloud:migrate:local": "wrangler d1 migrations apply codex-taskboard-db --local",
