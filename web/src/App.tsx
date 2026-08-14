@@ -34,6 +34,7 @@ import {
   getTaskboardRevision,
   getWorkflowWorkspace,
   getTaskboardMetadata,
+  listAiChatThreads,
   listArchivedTasks,
   listDevelopmentContexts,
   listDeviceWorkspaces,
@@ -57,6 +58,7 @@ import {
 } from "./actors";
 import { BoardColumn } from "./components/BoardColumn";
 import { AiChat, type AiChatOpenThreadRequest } from "./components/AiChat";
+import { TaskConversationModal } from "./components/TaskConversationModal";
 import { DashboardView } from "./components/DashboardView";
 import { IssueListView } from "./components/IssueListView";
 import { JiraConnectionDialog } from "./components/JiraConnectionDialog";
@@ -633,6 +635,7 @@ export function App() {
   const [localAiChatAvailable, setLocalAiChatAvailable] = useState(false);
   const [aiThreads, setAiThreads] = useState<AiChatThread[]>([]);
   const [aiOpenThreadRequest, setAiOpenThreadRequest] = useState<AiChatOpenThreadRequest | null>(null);
+  const [taskConversation, setTaskConversation] = useState<{ threadId: string | null } | null>(null);
   const [readActivityKeys, setReadActivityKeys] = useState<Record<string, string>>({});
   const [processingNow, setProcessingNow] = useState(() => Date.now());
   const [recentProjectIds, setRecentProjectIds] = useState(readRecentProjectIds);
@@ -2273,15 +2276,20 @@ export function App() {
   }
 
   function openTaskConversation(conversation: TaskConversationItem) {
-    if (conversation.kind === "local-ai" && conversation.aiThreadId) {
-      setAiOpenThreadRequest((current) => ({
-        threadId: conversation.aiThreadId!,
-        requestId: (current?.requestId ?? 0) + 1,
-      }));
+    if (conversation.kind === "local-ai") {
+      setTaskConversation({ threadId: conversation.aiThreadId });
       return;
     }
     if (conversation.nativeThreadId) openThread(conversation.nativeThreadId);
   }
+
+  const refreshAiThreads = useCallback(async () => {
+    try {
+      setAiThreads(await listAiChatThreads());
+    } catch {
+      // 刷新失败不打断弹窗交互
+    }
+  }, []);
 
   function expandCodexSidebar() {
     if (!embedded || window.parent === window) return;
@@ -3292,6 +3300,15 @@ export function App() {
         issueId={detailTaskId}
         onThreadsChange={setAiThreads}
         openThreadRequest={aiOpenThreadRequest}
+      />
+
+      <TaskConversationModal
+        open={taskConversation !== null}
+        threadId={taskConversation?.threadId ?? null}
+        projectId={selectedProjectId}
+        issueId={null}
+        onClose={() => setTaskConversation(null)}
+        onThreadsChange={() => void refreshAiThreads()}
       />
 
       <div className="sr-only" role="status" aria-live="polite">{announcement}</div>

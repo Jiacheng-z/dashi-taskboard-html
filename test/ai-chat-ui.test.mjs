@@ -331,3 +331,22 @@ test("AiChat.tsx 只是门面，外壳逻辑在 QuickChatPanel.tsx", async () =>
   assert.match(shell, /LAST_THREAD_KEY/);
   assert.match(shell, /<ConversationView/);
 });
+
+test("任务对话弹窗是居中遮罩层，复用 ConversationView", async () => {
+  const modalSource = await readFile(
+    new URL("../web/src/components/TaskConversationModal.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(modalSource, /<ConversationView/);
+  assert.match(modalSource, /readOnlyWhileRunning/);
+  assert.match(modalSource, /task-conversation-backdrop/);
+  assert.match(modalSource, /任务尚无会话/);
+  // 弹窗不许碰后端私有信息，也不许出现原生 select（沿用既有约束）
+  assert.doesNotMatch(modalSource, /origin\.workspacePath|codexThreadId|manageTaskboardSkillPath/);
+  assert.doesNotMatch(modalSource, /<select/);
+  assert.match(styles, /\.task-conversation-backdrop\s*\{/);
+  assert.match(styles, /\.task-conversation-dialog\s*\{/);
+  assert.match(styles, /width:\s*min\(1100px/);
+  assert.match(styles, /height:\s*85vh/);
+  assert.match(appSource, /<TaskConversationModal/);
+});
