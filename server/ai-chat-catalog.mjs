@@ -248,6 +248,11 @@ function sanitizeSkills(entries) {
   return [...unique.values()].sort((left, right) => left.label.localeCompare(right.label));
 }
 
+export async function discoverCodexSkills({ codexExecutable, workspacePath, processEnv }) {
+  const environment = withoutTaskboardLauncherEnvironment(processEnv);
+  return sanitizeSkills(await listSkills(codexExecutable, workspacePath, environment));
+}
+
 export async function discoverAiCatalog({
   codexExecutable,
   workspacePath,

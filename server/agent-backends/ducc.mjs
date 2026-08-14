@@ -331,10 +331,22 @@ async function skillsInDirectory(root, scope) {
   return skills;
 }
 
-export async function discoverDuccCatalog({ executable, workspacePath, processEnv = process.env }) {
+export async function discoverDuccSkills({ workspacePath, processEnv = process.env }) {
   const environment = withoutTaskboardLauncherEnvironment(processEnv);
   const homeDirectory = environment.HOME || os.homedir();
-  const [models, userSkills, repoSkills] = await Promise.all([
+  const [userSkills, repoSkills] = await Promise.all([
+    skillsInDirectory(path.join(homeDirectory, ".claude", "skills"), "user"),
+    skillsInDirectory(path.join(workspacePath, ".claude", "skills"), "repo"),
+  ]);
+  // 同名时仓库级覆盖用户级（与 ducc 自己的加载优先级一致）
+  const unique = new Map();
+  for (const skill of [...userSkills, ...repoSkills]) unique.set(skill.id, skill);
+  return [...unique.values()].sort((left, right) => left.label.localeCompare(right.label));
+}
+
+export async function discoverDuccCatalog({ executable, workspacePath, processEnv = process.env }) {
+  const environment = withoutTaskboardLauncherEnvironment(processEnv);
+  const [models, skills] = await Promise.all([
     execFileAsync(executable, ["models"], {
       cwd: workspacePath,
       env: environment,
@@ -342,19 +354,9 @@ export async function discoverDuccCatalog({ executable, workspacePath, processEn
       timeout: CATALOG_TIMEOUT_MS,
       maxBuffer: CATALOG_MAX_BUFFER,
     }).then((result) => parseDuccModels(result.stdout)).catch(() => []),
-    skillsInDirectory(path.join(homeDirectory, ".claude", "skills"), "user"),
-    skillsInDirectory(path.join(workspacePath, ".claude", "skills"), "repo"),
+    discoverDuccSkills({ workspacePath, processEnv }),
   ]);
-
-  // 同名时仓库级覆盖用户级（与 ducc 自己的加载优先级一致）
-  const unique = new Map();
-  for (const skill of [...userSkills, ...repoSkills]) unique.set(skill.id, skill);
-
-  return {
-    models,
-    skills: [...unique.values()].sort((left, right) => left.label.localeCompare(right.label)),
-    sandboxes: [...DUCC_SANDBOXES],
-  };
+  return { models, skills, sandboxes: [...DUCC_SANDBOXES] };
 }
 
 export const duccBackend = {
@@ -374,4 +376,10 @@ export const duccBackend = {
   buildPrompt: buildCodexPrompt,
   createNormalizer: createDuccNormalizer,
   discoverCatalog: discoverDuccCatalog,
+  // ducc 没有 `mcp list` 这类命令，MCP 配置散在 ~/.claude.json 里且没有公开的稳定格式，
+  // 先返回空数组 —— 工作流面板的 MCP 选项对 ducc 就是空的（已记在「已知限制」）
+  discoverWorkflowCapabilities: async ({ workspacePath, processEnv }) => ({
+    skills: await discoverDuccSkills({ workspacePath, processEnv }),
+    mcpServers: [],
+  }),
 };

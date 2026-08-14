@@ -148,6 +148,15 @@ export class AiChatService {
     return this.#catalogForWorkspace(resolved.workspacePath);
   }
 
+  async discoverWorkflowCapabilities(workspacePath) {
+    const backend = this.#backend();
+    return backend.discoverWorkflowCapabilities({
+      executable: this.#executableFor(backend),
+      workspacePath,
+      processEnv: this.processEnv,
+    });
+  }
+
   async createThread(input) {
     const resolved = await this.resolveContext(input.projectId, input.issueId);
     const catalog = await this.getCatalog(input.projectId, resolved);

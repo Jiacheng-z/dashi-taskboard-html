@@ -1,5 +1,11 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+import { withoutTaskboardLauncherEnvironment } from "../../shared/codex-environment.mjs";
 import { resolveCodexExecutable } from "../../shared/codex-executable.mjs";
-import { discoverAiCatalog } from "../ai-chat-catalog.mjs";
+import { discoverAiCatalog, discoverCodexSkills } from "../ai-chat-catalog.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const VISIBLE_TEXT_LIMIT = 65_536;
 const SKILL_MARKER = "\uFFFC";
@@ -331,6 +337,30 @@ export function normalizeCodexEvent(raw) {
   return normalizedItem(raw.type, raw.item);
 }
 
+async function discoverCodexMcpServers(executable, processEnv) {
+  const result = await execFileAsync(executable, ["mcp", "list", "--json"], {
+    env: processEnv,
+    timeout: 8_000,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  const entries = JSON.parse(result.stdout);
+  if (!Array.isArray(entries)) throw new Error("Codex returned an invalid MCP server list");
+  return entries
+    .filter((entry) => (
+      entry
+      && typeof entry === "object"
+      && typeof entry.name === "string"
+      && entry.name.trim()
+      && entry.enabled !== false
+    ))
+    .map((entry) => ({
+      id: entry.name.trim(),
+      label: entry.name.trim(),
+      transport: typeof entry.transport?.type === "string" ? entry.transport.type : "unknown",
+    }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
 export const codexBackend = {
   id: "codex",
   // codex app 的自动化链路已废弃，但可执行文件解析仍沿用旧逻辑：
@@ -351,4 +381,11 @@ export const codexBackend = {
     workspacePath,
     processEnv,
   }),
+  discoverWorkflowCapabilities: async ({ executable, workspacePath, processEnv }) => {
+    const [skills, mcpServers] = await Promise.all([
+      discoverCodexSkills({ codexExecutable: executable, workspacePath, processEnv }),
+      discoverCodexMcpServers(executable, withoutTaskboardLauncherEnvironment(processEnv)),
+    ]);
+    return { skills, mcpServers };
+  },
 };

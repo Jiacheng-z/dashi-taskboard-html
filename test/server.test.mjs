@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
-import { access, chmod, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -759,7 +759,7 @@ while IFS= read -r line; do
 done
 `);
     await chmod(codexExecutable, 0o755);
-    return { codexExecutable };
+    return { agentBackendId: "codex", codexExecutable };
   });
 
   const result = await request(
@@ -803,11 +803,37 @@ done
 
 test("workflow capability discovery fails instead of inventing fallback options", async () => {
   const baseUrl = await startServer(async (directory) => ({
+    agentBackendId: "codex",
     codexExecutable: path.join(directory, "missing-codex"),
   }));
   const result = await request(baseUrl, "/api/workflow-capabilities");
   assert.equal(result.response.status, 500);
   assert.equal(result.body.error.code, "INTERNAL_ERROR");
+});
+
+test("ducc 后端的工作流能力来自本地 skill 目录且没有 MCP", async () => {
+  let workspacePath;
+  const baseUrl = await startServer(async (directory) => {
+    workspacePath = directory;
+    const skillDirectory = path.join(directory, ".claude", "skills", "demo-skill");
+    await mkdir(skillDirectory, { recursive: true });
+    await writeFile(path.join(skillDirectory, "SKILL.md"), "---\ndescription: 本地技能\n---\n");
+    const emptyHome = path.join(directory, "empty-home");
+    await mkdir(emptyHome);
+    return {
+      agentBackendId: "ducc",
+      // HOME 指到空目录，否则会把跑测试这台机器上真实的 ~/.claude/skills 扫进来
+      processEnv: { ...process.env, HOME: emptyHome },
+    };
+  });
+  const result = await request(
+    baseUrl,
+    `/api/workflow-capabilities?workspacePath=${encodeURIComponent(workspacePath)}`,
+  );
+  assert.equal(result.response.status, 200);
+  assert.deepEqual(result.body.mcpServers, []);
+  assert.deepEqual(result.body.skills.map((skill) => skill.id), ["demo-skill"]);
+  assert.equal(result.body.skills[0].scope, "repo");
 });
 
 test("existing task and comment thread attribution remains content-specific", async () => {
