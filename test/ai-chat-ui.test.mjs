@@ -211,7 +211,7 @@ test("composer does not submit during IME composition and background runs keep l
 });
 
 test("submission stays disabled while a snapshot is loading", () => {
-  assert.match(chatSource, /contentEditable=\{!composerBlocked\}/);
+  assert.match(chatSource, /contentEditable=\{!composerBlocked/);
   assert.match(chatSource, /const sendBlocked = loading[\s\S]*?\|\| settingsSaving/);
   assert.match(chatSource, /if \(sendBlocked\) return;/);
   assert.match(chatSource, /chatPrimaryAction\([\s\S]*?sendBlocked/);
@@ -227,7 +227,7 @@ test("new threads normalize inherited settings against the target project catalo
 });
 
 test("quiet refreshes preserve action errors and PATCH results are guarded by their starting thread", () => {
-  assert.match(chatSource, /if \(!quiet\) setError\(null\);/);
+  assert.match(chatSource, /if \(!quiet\) onError\(null\);/);
   assert.match(chatSource, /patchAiChatSnapshot\(current,\s*threadId,\s*thread\)/);
   assert.match(chatSource, /selectedThreadRef\.current === threadId/);
   assert.match(chatSource, /restoreDraftSettings\(previousThread\)/);
@@ -242,7 +242,7 @@ test("danger confirmation sends the bound pending retry instead of the current d
 
 test("SSE hints are coalesced and custom panel resize handles do not clip narrow menus", () => {
   assert.match(chatSource, /createAiSnapshotRefreshQueue/);
-  assert.match(chatSource, /selectedHintRefreshQueue\.request\(selectedThreadId\)/);
+  assert.match(chatSource, /selectedHintRefreshQueue\.request\(threadId\)/);
   assert.match(chatSource, /function startPanelResize\(/);
   assert.match(chatSource, /onPointerDown=\{\(event\) => startPanelResize\(event, "top-left"\)\}/);
   assert.match(styles, /\.ai-chat-resize-handle\.is-top-left\s*\{[\s\S]*?cursor:\s*nwse-resize;/);
@@ -268,6 +268,31 @@ test("card progress comes from the AI thread todo state instead of Codex session
     appSource,
     /taskCardPresentation\(\s*task,\s*aiThreads,\s*unread,\s*runningNativeThreadId,\s*hostContext\?\.threadTodoProgress \?\? null,\s*\)/,
   );
+});
+
+test("ConversationView 是受控的纯对话视图，不含面板外壳", async () => {
+  const viewSource = await readFile(
+    new URL("../web/src/components/ConversationView.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(viewSource, /export interface ConversationViewProps/);
+  for (const prop of [
+    "threadId",
+    "onThreadCreated",
+    "onThreadUpdate",
+    "onRunsObserved",
+    "onRequestClose",
+    "readOnlyWhileRunning",
+  ]) {
+    assert.match(viewSource, new RegExp(`\\b${prop}\\b`));
+  }
+  // 外壳的东西一律不许出现在视图里
+  assert.doesNotMatch(viewSource, /panelGeometry|PanelResizeEdge|LAST_THREAD_KEY|historyOpen/);
+  // ESC 必须走捕获阶段，且比 onRequestClose 先处理内部弹层
+  assert.match(viewSource, /addEventListener\("keydown", [^,]+, true\)/);
+  const danger = viewSource.indexOf("dangerConfirmOpen");
+  const close = viewSource.indexOf("onRequestClose()");
+  assert.ok(danger > 0 && close > 0 && danger < close);
 });
 
 test("展示层组件独立成 AiChatMessages.tsx", async () => {
