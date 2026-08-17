@@ -411,6 +411,14 @@ export async function deleteProject(projectId: string): Promise<void> {
   });
 }
 
+export async function updateProjectWorkspace(projectId: string, workspacePath: string | null): Promise<Project> {
+  const data = await request<{ project: Project }>(
+    `/api/projects/${encodeURIComponent(projectId)}`,
+    { method: "PATCH", body: JSON.stringify({ workspacePath }) },
+  );
+  return data.project;
+}
+
 export async function getProjectAutomation(projectId: string): Promise<ProjectAutomation> {
   const data = await request<{ automation: ProjectAutomation }>(
     `/api/projects/${encodeURIComponent(projectId)}/automation`,

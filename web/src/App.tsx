@@ -44,6 +44,7 @@ import {
   setCurrentUserActor,
   syncJiraConnection,
   updateProjectAutomation,
+  updateProjectWorkspace,
   uploadAttachment,
   updateTask as updateTaskRequest,
 } from "./api";
@@ -522,6 +523,10 @@ export function App() {
   const [pendingProjectDelete, setPendingProjectDelete] = useState<ProjectChoice | null>(null);
   const [projectDeleteIssueCount, setProjectDeleteIssueCount] = useState<number | null>(null);
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
+  const [workspaceDialogProject, setWorkspaceDialogProject] = useState<ProjectChoice | null>(null);
+  const [workspacePathInput, setWorkspacePathInput] = useState("");
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const [deviceWorkspacePaths, setDeviceWorkspacePaths] = useState(readDeviceWorkspacePaths);
   const [projectAutomation, setProjectAutomation] = useState<ProjectAutomation | null>(null);
   const [automationModels, setAutomationModels] = useState<AiChatModel[]>([]);
@@ -2038,6 +2043,38 @@ export function App() {
     setProjectDeleteIssueCount(null);
   }
 
+  function openWorkspaceDialog(project: ProjectChoice) {
+    setProjectContextMenu(null);
+    const current = projects.find((candidate) => candidate.id === project.id);
+    setWorkspacePathInput(current?.workspacePath ?? "");
+    setWorkspaceError(null);
+    setWorkspaceDialogProject(project);
+  }
+
+  function closeWorkspaceDialog() {
+    if (workspaceSaving) return;
+    setWorkspaceDialogProject(null);
+    setWorkspaceError(null);
+  }
+
+  async function saveWorkspacePath() {
+    if (!workspaceDialogProject || workspaceSaving) return;
+    const trimmed = workspacePathInput.trim();
+    setWorkspaceSaving(true);
+    setWorkspaceError(null);
+    try {
+      const updated = await updateProjectWorkspace(workspaceDialogProject.id, trimmed || null);
+      setProjects((current) => current.map((project) => (
+        project.id === updated.id ? updated : project
+      )));
+      setWorkspaceDialogProject(null);
+    } catch (error) {
+      setWorkspaceError(errorMessage(error));
+    } finally {
+      setWorkspaceSaving(false);
+    }
+  }
+
   async function deletePendingProject() {
     if (!pendingProjectDelete || deletingProjectId) return;
     const project = pendingProjectDelete;
@@ -2609,6 +2646,15 @@ export function App() {
           style={{ left: projectContextMenu.x, top: projectContextMenu.y }}
         >
           <button
+            className="context-menu-item"
+            type="button"
+            role="menuitem"
+            onClick={() => openWorkspaceDialog(projectContextMenu.project)}
+          >
+            <span className="context-menu-icon" aria-hidden="true"><TaskboardIcon name="projectFolder" /></span>
+            <span className="context-menu-label">{text("设置工作区", "Set workspace")}</span>
+          </button>
+          <button
             className="context-menu-item is-danger"
             type="button"
             role="menuitem"
@@ -2681,6 +2727,59 @@ export function App() {
                 {openingProjectId
                   ? text("创建中…", "Creating…")
                   : text("创建", "Create")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {workspaceDialogProject && (
+        <div
+          className="delete-backdrop"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) closeWorkspaceDialog();
+          }}
+        >
+          <form
+            className="delete-dialog project-workspace-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="project-workspace-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveWorkspacePath();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeWorkspaceDialog();
+            }}
+          >
+            <h2 id="project-workspace-title">{text("设置工作区", "Set workspace")}</h2>
+            <label>
+              <span>{text("工作区目录", "Workspace directory")}</span>
+              <input
+                autoFocus
+                maxLength={4096}
+                placeholder="/absolute/path/to/workspace"
+                value={workspacePathInput}
+                onChange={(event) => setWorkspacePathInput(event.target.value)}
+              />
+            </label>
+            {workspaceError && <p className="project-dialog-error">{workspaceError}</p>}
+            <div>
+              <button
+                className="button secondary"
+                type="button"
+                disabled={workspaceSaving}
+                onClick={closeWorkspaceDialog}
+              >
+                {text("取消", "Cancel")}
+              </button>
+              <button
+                className="button primary"
+                type="submit"
+                disabled={workspaceSaving}
+              >
+                {workspaceSaving ? text("保存中…", "Saving…") : text("保存", "Save")}
               </button>
             </div>
           </form>
