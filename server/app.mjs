@@ -1837,11 +1837,28 @@ export function createTaskboardServer(options = {}) {
           throw new ApiError(400, "INVALID_PATH", "Project id contains invalid encoding");
         }
         validateProjectId(projectId);
+        if (request.method === "PATCH") {
+          const body = await readJson(request);
+          assertPlainObject(body);
+          assertAllowedKeys(body, new Set(["workspacePath"]));
+          const workspacePath = stringField(body.workspacePath ?? null, "workspacePath", { nullable: true, maxLength: 4096 });
+          if (workspacePath === "") {
+            throw new ApiError(400, "INVALID_FIELD", "'workspacePath' cannot be empty");
+          }
+          if (workspacePath !== null && !path.isAbsolute(workspacePath)) {
+            throw new ApiError(400, "INVALID_FIELD", "'workspacePath' must be absolute");
+          }
+          if (workspacePath?.includes("\0")) {
+            throw new ApiError(400, "INVALID_FIELD", "'workspacePath' cannot contain null bytes");
+          }
+          const project = database.setProjectWorkspace(projectId, workspacePath);
+          return sendJson(response, 200, { project });
+        }
         if (request.method === "DELETE") {
           database.deleteProject(projectId);
           return sendEmpty(response, 204);
         }
-        return methodNotAllowed(response, ["DELETE"]);
+        return methodNotAllowed(response, ["DELETE", "PATCH"]);
       }
 
       const projectAutomationRoute = pathname.match(/^\/api\/projects\/([^/]+)\/automation$/);

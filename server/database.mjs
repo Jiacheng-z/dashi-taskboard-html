@@ -1205,6 +1205,17 @@ export class TaskboardDatabase {
     return row ? projectFromRow(row) : null;
   }
 
+  setProjectWorkspace(projectId, workspacePath) {
+    const existing = this.getProject(projectId);
+    if (!existing) {
+      throw new ApiError(404, "PROJECT_NOT_FOUND", `Project '${projectId}' does not exist`);
+    }
+    this.database.prepare(`
+      UPDATE projects SET workspace_path = ?, updated_at = ? WHERE id = ?
+    `).run(workspacePath, now(), projectId);
+    return this.getProject(projectId);
+  }
+
   addProjectLabel(projectId, label) {
     const project = this.database.prepare("SELECT labels FROM projects WHERE id = ?").get(projectId);
     if (!project) {
