@@ -31,7 +31,7 @@ export class TaskScheduler {
     this.manageTaskboardSkillPath = options.manageTaskboardSkillPath;
     this.processEnv = options.processEnv ?? process.env;
     // key = projectId，value = 上次认领的毫秒时间戳。只在内存里，重启即失效，
-    // 重启后第一轮不受 per-project intervalMinutes 限制（见「与规格的偏离」第二处）
+    // 重启后第一轮不受 per-project intervalSeconds 限制（见「与规格的偏离」第二处）
     this.lastClaimedAt = new Map();
     this.timer = null;
     // 已认领但 ai_chat_runs 行还没建出来的任务 id。并发闸门要把这批算进去，
@@ -160,7 +160,7 @@ export class TaskScheduler {
     const started = [];
     for (const project of this.database.listProjectsWithAutomationEnabled()) {
       const lastClaimedAt = this.lastClaimedAt.get(project.projectId);
-      const gapMs = project.automation.intervalMinutes * 60_000;
+      const gapMs = project.automation.intervalSeconds * 1000;
       if (lastClaimedAt !== undefined && startedAt - lastClaimedAt < gapMs) continue;
       const todos = this.database.listTasks({
         projectId: project.projectId,

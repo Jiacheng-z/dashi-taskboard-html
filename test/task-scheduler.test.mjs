@@ -277,7 +277,7 @@ test("agent 没收尾时兜底评论并落 in_review；已收尾则不插手", a
 test("tick 受并发上限约束，并遵守项目级 intervalMinutes 间隔", async () => {
   const fixture = await createFixture({ concurrency: 2, holdMs: 300 });
   try {
-    fixture.database.setProjectAutomation("project", { enabledByUser: true, intervalMinutes: 5 });
+    fixture.database.setProjectAutomation("project", { enabledByUser: true, intervalSeconds: 300 });
     for (let index = 0; index < 5; index += 1) fixture.createTodo(`任务 ${index}`);
 
     const pending = await fixture.scheduler.tick();

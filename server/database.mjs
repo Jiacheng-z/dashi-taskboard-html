@@ -23,7 +23,7 @@ function now() {
 
 const DEFAULT_PROJECT_AUTOMATION = {
   enabledByUser: false,
-  intervalMinutes: 5,
+  intervalSeconds: 300,
   // model / reasoningEffort 为 null 表示「跟随后端 catalog 的默认值」，
   // 不写死 codex 时代的 "gpt-5.5"（规格 §8.3）
   model: null,
@@ -38,12 +38,17 @@ function projectAutomationFromJson(raw) {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { ...DEFAULT_PROJECT_AUTOMATION };
   }
-  const intervalMinutes = Number(parsed.intervalMinutes);
+  let intervalSeconds = Number(parsed.intervalSeconds);
+  if (!(Number.isInteger(intervalSeconds) && intervalSeconds > 0)) {
+    // 向后兼容：旧版本存的是 intervalMinutes（整数分钟）
+    const legacyMinutes = Number(parsed.intervalMinutes);
+    intervalSeconds = Number.isInteger(legacyMinutes) && legacyMinutes > 0
+      ? legacyMinutes * 60
+      : DEFAULT_PROJECT_AUTOMATION.intervalSeconds;
+  }
   return {
     enabledByUser: parsed.enabledByUser === true,
-    intervalMinutes: Number.isInteger(intervalMinutes) && intervalMinutes > 0
-      ? intervalMinutes
-      : DEFAULT_PROJECT_AUTOMATION.intervalMinutes,
+    intervalSeconds,
     model: typeof parsed.model === "string" && parsed.model.trim() ? parsed.model.trim() : null,
     reasoningEffort: typeof parsed.reasoningEffort === "string" && parsed.reasoningEffort.trim()
       ? parsed.reasoningEffort.trim()

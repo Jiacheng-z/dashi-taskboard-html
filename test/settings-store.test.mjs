@@ -102,20 +102,20 @@ test("project automation options default off and round-trip through the database
 
     assert.deepEqual(database.getProjectAutomation("p"), {
       enabledByUser: false,
-      intervalMinutes: 5,
+      intervalSeconds: 300,
       model: null,
       reasoningEffort: null,
     });
 
     const saved = database.setProjectAutomation("p", {
       enabledByUser: true,
-      intervalMinutes: 15,
+      intervalSeconds: 900,
       model: "claude-opus",
       reasoningEffort: "high",
     });
     assert.deepEqual(saved, {
       enabledByUser: true,
-      intervalMinutes: 15,
+      intervalSeconds: 900,
       model: "claude-opus",
       reasoningEffort: "high",
     });
@@ -126,7 +126,7 @@ test("project automation options default off and round-trip through the database
     );
 
     // 浅合并：只带一个字段不应该把其他字段冲掉
-    assert.equal(database.setProjectAutomation("p", { intervalMinutes: 30 }).model, "claude-opus");
+    assert.equal(database.setProjectAutomation("p", { intervalSeconds: 1800 }).model, "claude-opus");
 
     database.setProjectAutomation("p", { enabledByUser: false });
     assert.deepEqual(database.listProjectsWithAutomationEnabled(), []);
@@ -135,6 +135,22 @@ test("project automation options default off and round-trip through the database
       () => database.getProjectAutomation("missing"),
       (error) => error.code === "PROJECT_NOT_FOUND",
     );
+  } finally {
+    database.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("读取存量 intervalMinutes 自动换算为 intervalSeconds", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "taskboard-settings-automation-legacy-"));
+  const database = new TaskboardDatabase(path.join(directory, "taskboard.sqlite"));
+  try {
+    database.createProject({ id: "p", name: "P", workspacePath: null });
+    database.database.prepare("UPDATE projects SET automation_options = ? WHERE id = ?")
+      .run(JSON.stringify({ enabledByUser: true, intervalMinutes: 15, model: "claude-opus", reasoningEffort: "high" }), "p");
+    assert.deepEqual(database.getProjectAutomation("p"), {
+      enabledByUser: true, intervalSeconds: 900, model: "claude-opus", reasoningEffort: "high",
+    });
   } finally {
     database.close();
     await rm(directory, { recursive: true, force: true });

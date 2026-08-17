@@ -42,7 +42,8 @@ test("the project navigation automation menu owns the icon, fields, and accessib
   assert.match(menuSource, /aria-label=\{status === "ACTIVE"\s*\? text\("自动认领中", "Auto-claiming"\)\s*: text\("自动化", "Automation"\)\}/);
   assert.doesNotMatch(menuSource, /已开启自动认领|自动认领未开启/);
   assert.match(menuSource, /自动认领开关/);
-  assert.match(menuSource, /5, 10, 15, 30, 60/);
+  assert.match(menuSource, /\[10, \["10 秒", "10 sec"\]\]/);
+  assert.match(menuSource, /\[300, \["5 分钟", "5 min"\]\]/);
   assert.match(menuSource, /models\.map/);
   assert.match(menuSource, /EFFORT_LABELS\[effort\]/);
   assert.match(menuSource, /createPortal/);
@@ -128,7 +129,7 @@ test("自动化配置走 HTTP 接口而不是 host message", async () => {
   assert.match(apiText, /method: "PATCH"/);
   const typesText = await readFile(new URL("../web/src/types.ts", import.meta.url), "utf8");
   assert.match(typesText, /export interface ProjectAutomation \{/);
-  for (const field of ["enabledByUser", "intervalMinutes", "model", "reasoningEffort"]) {
+  for (const field of ["enabledByUser", "intervalSeconds", "model", "reasoningEffort"]) {
     assert.match(typesText, new RegExp(`${field}:`));
   }
   assert.doesNotMatch(typesText, /quotaAware/);

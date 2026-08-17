@@ -8,7 +8,7 @@ type AutomationStatus = "ACTIVE" | "PAUSED";
 
 export interface AutomationOptions {
   enabledByUser: boolean;
-  intervalMinutes: number;
+  intervalSeconds: number;
   /** null = 跟随所选后端的默认模型，不写死 slug */
   model: string | null;
   /** null = 跟随所选模型的 defaultReasoningEffort */
@@ -27,7 +27,7 @@ interface ProjectAutomationMenuProps {
 
 const DEFAULT_OPTIONS: AutomationOptions = {
   enabledByUser: false,
-  intervalMinutes: 5,
+  intervalSeconds: 300,
   model: null,
   reasoningEffort: null,
 };
@@ -42,6 +42,18 @@ const EFFORT_LABELS: Record<string, readonly [string, string]> = {
   max: ["最高", "Maximum"],
   ultra: ["极高 (ultra)", "Ultra"],
 };
+
+// 秒为单位。10 秒 / 30 秒专供本地测试快速轮询；300（5 分钟）为默认。
+const INTERVAL_OPTIONS: ReadonlyArray<readonly [number, readonly [string, string]]> = [
+  [10, ["10 秒", "10 sec"]],
+  [30, ["30 秒", "30 sec"]],
+  [60, ["1 分钟", "1 min"]],
+  [300, ["5 分钟", "5 min"]],
+  [600, ["10 分钟", "10 min"]],
+  [900, ["15 分钟", "15 min"]],
+  [1800, ["30 分钟", "30 min"]],
+  [3600, ["1 小时", "1 hr"]],
+];
 
 export function ProjectAutomationMenu({
   automation,
@@ -159,15 +171,15 @@ export function ProjectAutomationMenu({
       <label className="project-automation-field">
         <span>{text("间隔", "Interval")}</span>
         <select
-          value={draft.intervalMinutes}
+          value={draft.intervalSeconds}
           disabled={disabled}
           onChange={(event) => submitChange({
             ...draft,
-            intervalMinutes: Number(event.target.value),
+            intervalSeconds: Number(event.target.value),
           })}
         >
-          {[5, 10, 15, 30, 60].map((minutes) => (
-            <option key={minutes} value={minutes}>{text(`${minutes} 分钟`, `${minutes} min`)}</option>
+          {INTERVAL_OPTIONS.map(([seconds, label]) => (
+            <option key={seconds} value={seconds}>{text(...label)}</option>
           ))}
         </select>
       </label>

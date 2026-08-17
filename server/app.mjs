@@ -1881,14 +1881,14 @@ export function createTaskboardServer(options = {}) {
           assertPlainObject(body);
           assertAllowedKeys(
             body,
-            new Set(["enabledByUser", "intervalMinutes", "model", "reasoningEffort"]),
+            new Set(["enabledByUser", "intervalSeconds", "model", "reasoningEffort"]),
           );
           if (Object.hasOwn(body, "enabledByUser") && typeof body.enabledByUser !== "boolean") {
             throw new ApiError(400, "INVALID_FIELD", "enabledByUser must be a boolean");
           }
-          if (Object.hasOwn(body, "intervalMinutes")
-            && !(Number.isInteger(body.intervalMinutes) && body.intervalMinutes > 0)) {
-            throw new ApiError(400, "INVALID_FIELD", "intervalMinutes must be a positive integer");
+          if (Object.hasOwn(body, "intervalSeconds")
+            && !(Number.isInteger(body.intervalSeconds) && body.intervalSeconds > 0)) {
+            throw new ApiError(400, "INVALID_FIELD", "intervalSeconds must be a positive integer");
           }
           for (const key of ["model", "reasoningEffort"]) {
             if (Object.hasOwn(body, key) && body[key] !== null && typeof body[key] !== "string") {

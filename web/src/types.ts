@@ -342,7 +342,7 @@ export interface TaskDraft {
 /** 服务端 projects.automation_options 的形状，见 server/app.mjs 的 /api/projects/:id/automation */
 export interface ProjectAutomation {
   enabledByUser: boolean;
-  intervalMinutes: number;
+  intervalSeconds: number;
   /** null = 跟随所选后端的默认模型，不写死 slug */
   model: string | null;
   reasoningEffort: string | null;

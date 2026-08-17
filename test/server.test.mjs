@@ -2048,16 +2048,16 @@ test("project automation options round-trip over HTTP", async () => {
   const initial = await request(baseUrl, "/api/projects/automated/automation");
   assert.equal(initial.response.status, 200);
   assert.deepEqual(initial.body, {
-    automation: { enabledByUser: false, intervalMinutes: 5, model: null, reasoningEffort: null },
+    automation: { enabledByUser: false, intervalSeconds: 300, model: null, reasoningEffort: null },
   });
 
   const patched = await request(baseUrl, "/api/projects/automated/automation", {
     method: "PATCH",
-    body: { enabledByUser: true, intervalMinutes: 15 },
+    body: { enabledByUser: true, intervalSeconds: 900 },
   });
   assert.equal(patched.response.status, 200);
   assert.deepEqual(patched.body, {
-    automation: { enabledByUser: true, intervalMinutes: 15, model: null, reasoningEffort: null },
+    automation: { enabledByUser: true, intervalSeconds: 900, model: null, reasoningEffort: null },
   });
 
   // 浅合并：只带一个字段不会把其他字段冲掉
@@ -2066,7 +2066,7 @@ test("project automation options round-trip over HTTP", async () => {
     body: { model: "gpt-real" },
   });
   assert.deepEqual(again.body.automation, {
-    enabledByUser: true, intervalMinutes: 15, model: "gpt-real", reasoningEffort: null,
+    enabledByUser: true, intervalSeconds: 900, model: "gpt-real", reasoningEffort: null,
   });
 
   const unknownKey = await request(baseUrl, "/api/projects/automated/automation", {
@@ -2077,7 +2077,7 @@ test("project automation options round-trip over HTTP", async () => {
 
   const badInterval = await request(baseUrl, "/api/projects/automated/automation", {
     method: "PATCH",
-    body: { intervalMinutes: 0 },
+    body: { intervalSeconds: 0 },
   });
   assert.equal(badInterval.response.status, 400);
 
