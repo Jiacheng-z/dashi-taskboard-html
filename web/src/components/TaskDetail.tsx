@@ -42,6 +42,10 @@ import type {
   TaskRelationSummary,
   TaskStatus,
 } from "../types";
+import type {
+  TaskCardPresentation,
+  TaskConversationItem,
+} from "../taskConversations";
 import {
   CODEX_AGENT_ACTOR,
   actorKey,
@@ -106,6 +110,8 @@ interface TaskDetailProps {
   ) => Promise<RelationMutationResult>;
   onOpenThread: (threadId: string) => void;
   onOpenInThread: (task: Task) => void;
+  presentation: TaskCardPresentation | undefined;
+  onOpenConversation: (conversation: TaskConversationItem) => void;
   onCopy: (text: string, announcement: string) => void;
   openingThread: boolean;
   onError: (message: TaskDetailError | null) => void;
@@ -332,18 +338,28 @@ function DescriptionDocument({ value }: { value: string }) {
 
 function ConversationLink({
   threadId,
+  conversations,
   onOpen,
+  onOpenConversation,
 }: {
   threadId: string;
+  conversations: TaskConversationItem[] | undefined;
   onOpen: (threadId: string) => void;
+  onOpenConversation: (conversation: TaskConversationItem) => void;
 }) {
   const { text } = useTaskboardI18n();
+  // 不按 threadId 字符串匹配：task.threadId/comment.threadId 是外部 agent 曾经上报给
+  // taskctl 的原生会话 id，与本地 AI 后端自己的 codexThreadId（如 ducc 的 --resume 私有会话
+  // token）是两套互不相关的 id 空间，实测经常不相等（同一议题下 a137ab22-... vs
+  // 1aa88eec-...），按值匹配几乎总落空。只要这条议题有任意本地 AI 会话就在弹窗里打开它，
+  // 和 TaskConversationMenu/openOrStartTaskConversation 的判断口径保持一致。
+  const matched = conversations?.find((conversation) => conversation.kind === "local-ai");
   return (
     <button
       className="issue-conversation-link"
       type="button"
       title={text(`查看对话 ${threadId}`, `View conversation ${threadId}`)}
-      onClick={() => onOpen(threadId)}
+      onClick={() => (matched ? onOpenConversation(matched) : onOpen(threadId))}
     >
       <TaskboardIcon name="conversation" />
       <strong>{text("查看对话", "View conversation")}</strong>
@@ -370,6 +386,8 @@ export function TaskDetail({
   onRemoveRelation,
   onOpenThread,
   onOpenInThread,
+  presentation,
+  onOpenConversation,
   onCopy,
   openingThread,
   onError,
@@ -944,7 +962,12 @@ export function TaskDetail({
                     className="issue-conversation-list"
                     aria-label={text("处理此议题的对话", "Conversations for this issue")}
                   >
-                    <ConversationLink threadId={currentTask.threadId} onOpen={onOpenThread} />
+                    <ConversationLink
+                      threadId={currentTask.threadId}
+                      conversations={presentation?.conversations}
+                      onOpen={onOpenThread}
+                      onOpenConversation={onOpenConversation}
+                    />
                   </div>
                 )}
               </div>
@@ -1308,7 +1331,12 @@ export function TaskDetail({
                       )}
                       {comment.threadId && (
                         <div className="comment-conversation-link">
-                          <ConversationLink threadId={comment.threadId} onOpen={onOpenThread} />
+                          <ConversationLink
+                            threadId={comment.threadId}
+                            conversations={presentation?.conversations}
+                            onOpen={onOpenThread}
+                            onOpenConversation={onOpenConversation}
+                          />
                         </div>
                       )}
                     </div>

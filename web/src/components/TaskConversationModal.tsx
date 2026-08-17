@@ -1,7 +1,12 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { useTaskboardI18n } from "../i18n";
 import { ConversationView, type AiChatError } from "./ConversationView";
+
+// 必须是模块级稳定引用：ConversationView 的 loadSnapshot（useCallback）把 onRunsObserved
+// 列进依赖，这里若每次渲染传新的内联箭头函数，会同 onThreadUpdate 一样引发无限重跑
+// （见下方 handleThreadsChange 的注释），这条任务对话弹窗本就不关心 run 未读判定。
+function noopRunsObserved() {}
 
 export interface TaskConversationModalProps {
   open: boolean;
@@ -23,6 +28,13 @@ export function TaskConversationModal({
 }: TaskConversationModalProps) {
   const { text } = useTaskboardI18n();
   const [error, setError] = useState<AiChatError | null>(null);
+  // 必须稳定：ConversationView 的 loadSnapshot（useCallback）把 onThreadUpdate 列进依赖，
+  // 这里若每次渲染传新的内联箭头函数，loadSnapshot 引用跟着变 → 依赖它的「按 threadId 加载」
+  // effect 被判定为需要重跑 → 重置 snapshot 并再次进入「正在恢复对话」loading 态 → 加载完再次
+  // 调用 onThreadUpdate 触发外壳重渲染 → 循环，即用户报告的「正在恢复对话」无限闪烁。
+  const handleThreadsChange = useCallback(() => {
+    onThreadsChange?.();
+  }, [onThreadsChange]);
 
   if (!open) return null;
 
@@ -67,9 +79,9 @@ export function TaskConversationModal({
             error={error}
             readOnlyWhileRunning
             onError={setError}
-            onThreadCreated={() => onThreadsChange?.()}
-            onThreadUpdate={() => onThreadsChange?.()}
-            onRunsObserved={() => {}}
+            onThreadCreated={handleThreadsChange}
+            onThreadUpdate={handleThreadsChange}
+            onRunsObserved={noopRunsObserved}
             onRequestClose={onClose}
           />
         )}

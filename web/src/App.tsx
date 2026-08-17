@@ -279,12 +279,6 @@ function readDeviceWorkspacePaths(): Record<string, string> {
   }
 }
 
-function workspaceName(path?: string): string | null {
-  if (!path) return null;
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts.at(-1) ?? path;
-}
-
 function isLocalTaskboardOrigin(origin: string): boolean {
   try {
     const { protocol, hostname } = new URL(origin);
@@ -456,7 +450,9 @@ export function App() {
   const [localAiChatAvailable, setLocalAiChatAvailable] = useState(false);
   const [aiThreads, setAiThreads] = useState<AiChatThread[]>([]);
   const [aiOpenThreadRequest, setAiOpenThreadRequest] = useState<AiChatOpenThreadRequest | null>(null);
-  const [taskConversation, setTaskConversation] = useState<{ threadId: string | null } | null>(null);
+  const [taskConversation, setTaskConversation] = useState<
+    { threadId: string | null; issueId: string | null } | null
+  >(null);
   const [readActivityKeys, setReadActivityKeys] = useState<Record<string, string>>({});
   const [processingNow, setProcessingNow] = useState(() => Date.now());
   const [recentProjectIds, setRecentProjectIds] = useState(readRecentProjectIds);
@@ -1829,14 +1825,27 @@ export function App() {
     window.location.assign(`codex://threads/${encodeURIComponent(threadId.trim())}`);
   }
 
-  function openTaskConversation(conversation: TaskConversationItem) {
+  function openTaskConversation(conversation: TaskConversationItem, issueId: string | null = null) {
     if (conversation.kind === "local-ai") {
       // local-ai 会话的 aiThreadId 在当前数据模型下恒非空（taskConversations.ts 里从 aiThreads 数组
       // 生成，aiThreadId = thread.id）；为 null 时弹窗显示「任务尚无会话」空态，属有意为之。
-      setTaskConversation({ threadId: conversation.aiThreadId });
+      setTaskConversation({ threadId: conversation.aiThreadId, issueId });
       return;
     }
     if (conversation.nativeThreadId) openThread(conversation.nativeThreadId);
+  }
+
+  // 详情页顶部「在对话中打开」与右键菜单同名项共用：有本地 AI 会话就打开它，
+  // 否则打开草稿态弹窗（threadId=null），交给 ConversationView 在用户发出第一条消息时惰性建会话，
+  // 不再像 openTaskInThread 那样跳转/新建 codex:// 会话。
+  function openOrStartTaskConversation(task: Task) {
+    const presentation = taskPresentations[task.id];
+    const existing = presentation?.conversations.find((item) => item.kind === "local-ai");
+    if (existing) {
+      openTaskConversation(existing, task.id);
+      return;
+    }
+    setTaskConversation({ threadId: null, issueId: task.id });
   }
 
   // 注意：aiThreads 有两条写入路径 —— 面板 <AiChat onThreadsChange={setAiThreads}> 的同步 setter，
@@ -1849,47 +1858,19 @@ export function App() {
       // 刷新失败不打断弹窗交互
     }
   }, []);
+  // 必须是稳定引用：TaskConversationModal 把它一路传进 ConversationView 的
+  // onThreadCreated/onThreadUpdate，而 loadSnapshot 的 useCallback 依赖这两个 prop。
+  // 如果这里每次渲染都传新的内联箭头函数，loadSnapshot identity 跟着变 →
+  // threadId 那个 effect（依赖 loadSnapshot）重新跑 → setSnapshot(null)+setLoading(true)
+  // 触发一次「正在恢复对话」→ 加载完调用 onThreadUpdate → 又调回 refreshAiThreads →
+  // setAiThreads 让 App 重渲染 → 循环不停闪烁（已实测复现，见 systematic-debugging 排查记录）。
+  const handleAiThreadsChange = useCallback(() => {
+    void refreshAiThreads();
+  }, [refreshAiThreads]);
 
   function expandCodexSidebar() {
     if (!embedded || window.parent === window) return;
     postEmbeddedHostMessage({ type: "taskboard:expand-sidebar" });
-  }
-
-  function openTaskInThread(task: Task) {
-    const worktreePath = task.developmentContext?.type === "worktree"
-      ? task.developmentContext.path
-      : null;
-    const workspacePath = worktreePath
-      ?? selectedDeviceWorkspacePath
-      ?? developmentScan.workspacePath
-      ?? hostContext?.workspacePath;
-    const instruction = `e-taskboard 处理任务面板任务 ${task.identifier}，并同步进度状态。`;
-
-    if (!embedded || window.parent === window) {
-      const query = new URLSearchParams();
-      if (workspacePath) query.set("path", workspacePath);
-      query.set("prompt", instruction);
-      window.location.assign(`codex://new?${query.toString().replace(/\+/g, "%20")}`);
-      return;
-    }
-    if (openingThreadTaskId) return;
-    const codexProject = hostContext?.projects?.find((project) => project.id === selectedProject?.id);
-    setOpeningThreadTaskId(task.id);
-    setActionError(null);
-    postEmbeddedHostMessage({
-      type: "taskboard:create-thread",
-      payload: {
-        taskId: task.id,
-        identifier: task.identifier,
-        instruction,
-        codexProjectId: codexProject?.id ?? (
-          selectedProject?.id === GLOBAL_PROJECT_ID ? hostContext?.projectId : selectedProject?.id
-        ),
-        projectName: selectedProject?.name,
-        workspacePath,
-        workspaceLabel: worktreePath ? workspaceName(worktreePath) : undefined,
-      },
-    });
   }
 
   function changeProject(projectId: string) {
@@ -2475,7 +2456,9 @@ export function App() {
               mutateTaskRelation("remove", current, type, relatedTaskId)
             )}
             onOpenThread={openThread}
-            onOpenInThread={openTaskInThread}
+            onOpenInThread={openOrStartTaskConversation}
+            presentation={taskPresentations[detailTask.id]}
+            onOpenConversation={(conversation) => openTaskConversation(conversation, detailTask.id)}
             onCopy={(text, message) => void copyText(text, message)}
             openingThread={openingThreadTaskId === detailTask.id}
             onError={setActionError}
@@ -2943,7 +2926,7 @@ export function App() {
           ).catch(() => {})}
           onDuplicate={(task) => void duplicateTask(task)}
           onCopy={(text, message) => void copyText(text, message)}
-          onOpenInThread={openTaskInThread}
+          onOpenInThread={openOrStartTaskConversation}
           onArchive={(task) => void archiveTask(task)}
         />
       )}
@@ -2960,9 +2943,9 @@ export function App() {
         open={taskConversation !== null}
         threadId={taskConversation?.threadId ?? null}
         projectId={selectedProjectId}
-        issueId={null}
+        issueId={taskConversation?.issueId ?? null}
         onClose={() => setTaskConversation(null)}
-        onThreadsChange={() => void refreshAiThreads()}
+        onThreadsChange={handleAiThreadsChange}
       />
 
       <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
