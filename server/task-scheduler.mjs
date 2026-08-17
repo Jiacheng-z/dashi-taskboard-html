@@ -34,6 +34,7 @@ export class TaskScheduler {
     // 重启后第一轮不受 per-project intervalSeconds 限制（见「与规格的偏离」第二处）
     this.lastClaimedAt = new Map();
     this.timer = null;
+    this.running = false;
     // 已认领但 ai_chat_runs 行还没建出来的任务 id。并发闸门要把这批算进去，
     // 否则一轮里连开 N 个 startTurn 时 COUNT(*) 还是 0，上限形同虚设（任务 9）
     this.pending = new Set();
@@ -180,20 +181,38 @@ export class TaskScheduler {
     return started;
   }
 
+  nextDelayMs() {
+    const globalMs = this.config().intervalMs;
+    let shortest = globalMs;
+    for (const project of this.database.listProjectsWithAutomationEnabled()) {
+      const ms = project.automation.intervalSeconds * 1000;
+      if (ms < shortest) shortest = ms;
+    }
+    return shortest;
+  }
+
   start() {
-    if (this.timer) return;
-    this.timer = setInterval(() => {
-      // tick 内部已经把每条任务的异常吞在 #execute 里，这里只兜 tick 自身的同步/查询异常
-      this.tick().catch((error) => {
+    if (this.running) return;
+    this.running = true;
+    const loop = async () => {
+      try {
+        await this.tick();
+      } catch (error) {
         console.error("[task-scheduler] tick failed:", error);
-      });
-    }, this.config().intervalMs);
+      }
+      if (!this.running) return;
+      this.timer = setTimeout(loop, this.nextDelayMs());
+      this.timer.unref?.();
+    };
+    this.timer = setTimeout(loop, this.nextDelayMs());
     this.timer.unref?.();
   }
 
   stop() {
-    if (!this.timer) return;
-    clearInterval(this.timer);
-    this.timer = null;
+    this.running = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
   }
 }

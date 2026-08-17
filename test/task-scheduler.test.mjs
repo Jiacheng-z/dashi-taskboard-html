@@ -322,3 +322,35 @@ test("automation 未开启的项目不会被认领", async () => {
     await fixture.close();
   }
 });
+
+test("nextDelayMs 取全局节拍与已启用项目最短间隔的较小值", async () => {
+  const fixture = await createFixture();
+  try {
+    // 无启用项目 → 回落全局默认 5 分钟
+    assert.equal(fixture.scheduler.nextDelayMs(), 300_000);
+    // 启用一个 10 秒项目 → 循环该 10 秒醒一次
+    fixture.database.setProjectAutomation("project", { enabledByUser: true, intervalSeconds: 10 });
+    assert.equal(fixture.scheduler.nextDelayMs(), 10_000);
+    // 项目间隔比全局长 → 仍取全局
+    fixture.database.setProjectAutomation("project", { enabledByUser: true, intervalSeconds: 600 });
+    assert.equal(fixture.scheduler.nextDelayMs(), 300_000);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("start 按最短项目间隔轮询，无需等 5 分钟", async () => {
+  const fixture = await createFixture();
+  try {
+    fixture.database.setProjectAutomation("project", { enabledByUser: true, intervalSeconds: 1 });
+    const task = fixture.createTodo("轮询我");
+    fixture.scheduler.start();
+    // 1 秒后第一轮 tick 应认领这条 todo；等它跑进「等你确认」才算 #execute 彻底收尾
+    // （countRunningAiChatRuns 在 run 落终态到 finalize 挪状态之间有短暂窗口都是 0，
+    // 不能拿它当收尾信号，得等业务状态本身变化）
+    await waitFor(() => fixture.database.getTask(task.id).status === "in_review");
+    assert.equal(fixture.database.listAiChatThreads().length, 1);
+  } finally {
+    await fixture.close();
+  }
+});
