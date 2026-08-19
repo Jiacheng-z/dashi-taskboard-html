@@ -253,10 +253,10 @@ export function createDuccNormalizer() {
   };
 }
 
-function executableOnPath(env) {
+export function executableOnPath(env, name) {
   for (const directory of (env.PATH || "").split(path.delimiter)) {
     if (!directory) continue;
-    const candidate = path.join(directory, "ducc");
+    const candidate = path.join(directory, name);
     try {
       accessSync(candidate, constants.X_OK);
       return candidate;
@@ -369,7 +369,7 @@ export const duccBackend = {
   resolveExecutable: ({ env = process.env } = {}) => {
     const explicit = env.DUCC_EXECUTABLE;
     if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
-    return executableOnPath(env) ?? "ducc";
+    return executableOnPath(env, "ducc") ?? "ducc";
   },
   buildArgs: buildDuccArgs,
   // prompt 格式（skill 引用替换 + <taskboard_context> + <user_message>）与后端无关
