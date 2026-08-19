@@ -1,9 +1,11 @@
+import { claudeBackend } from "./claude.mjs";
 import { codexBackend } from "./codex.mjs";
 import { duccBackend } from "./ducc.mjs";
 
-export const DEFAULT_AGENT_BACKEND = "ducc";
+export const DEFAULT_AGENT_BACKEND = "claude";
 
 const AGENT_BACKENDS = new Map([
+  [claudeBackend.id, claudeBackend],
   [codexBackend.id, codexBackend],
   [duccBackend.id, duccBackend],
 ]);

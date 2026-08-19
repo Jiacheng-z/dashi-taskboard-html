@@ -3,13 +3,14 @@ import { test } from "node:test";
 
 import { DEFAULT_AGENT_BACKEND, resolveAgentBackend } from "../server/agent-backends/index.mjs";
 
-test("registry defaults to ducc and falls back for unknown ids", () => {
-  assert.equal(DEFAULT_AGENT_BACKEND, "ducc");
+test("registry defaults to claude and falls back for unknown ids", () => {
+  assert.equal(DEFAULT_AGENT_BACKEND, "claude");
+  assert.equal(resolveAgentBackend("claude").id, "claude");
   assert.equal(resolveAgentBackend("ducc").id, "ducc");
   assert.equal(resolveAgentBackend("codex").id, "codex");
-  assert.equal(resolveAgentBackend(null).id, "ducc");
-  assert.equal(resolveAgentBackend(undefined).id, "ducc");
-  assert.equal(resolveAgentBackend("gemini-whatever").id, "ducc");
+  assert.equal(resolveAgentBackend(null).id, "claude");
+  assert.equal(resolveAgentBackend(undefined).id, "claude");
+  assert.equal(resolveAgentBackend("gemini-whatever").id, "claude");
 });
 
 test("codex adapter builds the same argv it always did", () => {

@@ -411,14 +411,14 @@ test("the agent backend preference is readable and switchable over loopback", as
   try {
     const initial = await request(fixture.baseUrl, "/api/local/ai/backend");
     assert.equal(initial.response.status, 200);
-    assert.deepEqual(initial.body, { backend: "ducc", available: ["codex", "ducc"] });
+    assert.deepEqual(initial.body, { backend: "claude", available: ["claude", "codex", "ducc"] });
 
     const switched = await request(fixture.baseUrl, "/api/local/ai/backend", {
       method: "PATCH",
       body: { backend: "codex" },
     });
     assert.equal(switched.response.status, 200);
-    assert.deepEqual(switched.body, { backend: "codex", available: ["codex", "ducc"] });
+    assert.deepEqual(switched.body, { backend: "codex", available: ["claude", "codex", "ducc"] });
     assert.equal(
       (await request(fixture.baseUrl, "/api/local/ai/backend")).body.backend,
       "codex",
