@@ -2,7 +2,7 @@ import { buildAgentTaskPrompt } from "../shared/agent-task-prompt.mjs";
 import { buildTaskctlCommand } from "../shared/taskboard-automation.mjs";
 import { AGENT_ACTOR } from "../shared/agent-actor.mjs";
 
-const DEFAULT_CONCURRENCY = 2;
+const DEFAULT_CONCURRENCY = 5;
 const DEFAULT_INTERVAL_MS = 300_000;
 
 function positiveInteger(value, fallback) {

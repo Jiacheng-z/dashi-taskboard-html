@@ -141,7 +141,7 @@ test("scheduler config falls back to defaults, then settings, then env", async (
   try {
     const { database } = fixture;
     assert.deepEqual(resolveSchedulerConfig({ database, processEnv: {} }), {
-      concurrency: 2,
+      concurrency: 5,
       intervalMs: 300_000,
     });
 
@@ -163,7 +163,7 @@ test("scheduler config falls back to defaults, then settings, then env", async (
     database.setSetting("scheduler_concurrency", "not-a-number");
     database.setSetting("scheduler_interval_ms", "-5");
     assert.deepEqual(resolveSchedulerConfig({ database, processEnv: {} }), {
-      concurrency: 2,
+      concurrency: 5,
       intervalMs: 300_000,
     });
   } finally {
