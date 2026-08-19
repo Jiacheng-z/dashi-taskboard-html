@@ -16,16 +16,18 @@ const THREAD = {
   codexThreadId: null,
 };
 
-test("claude buildArgs reuses the ducc flags (same function)", () => {
-  assert.equal(claudeBackend.buildArgs, duccBackend.buildArgs);
+test("claude buildArgs reuses ducc flags but drops --model", () => {
+  // buildArgs 是包了 buildDuccArgs 的独立函数，不再同一个引用
+  assert.notEqual(claudeBackend.buildArgs, duccBackend.buildArgs);
   assert.deepEqual(claudeBackend.buildArgs(THREAD, ["/other"], []), [
     "-p", "--output-format", "stream-json", "--verbose",
     "--session-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     "--permission-mode", "acceptEdits",
     "--add-dir", "/other",
-    "--model", "claude-sonnet-5",
     "--effort", "high",
   ]);
+  // --model 被剥掉：claude 用 cc-switch 的 ~/.claude/settings.json 默认模型
+  assert.ok(!claudeBackend.buildArgs(THREAD, [], []).includes("--model"));
   assert.equal(claudeBackend.needsCwd, true);
   // 官方 claude 没有 bin/ducc 每次启动 sed -i 同一份 settings.json 的并发撞写问题
   assert.equal(claudeBackend.spawnGapMs, 0);
