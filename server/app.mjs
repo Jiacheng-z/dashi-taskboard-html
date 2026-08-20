@@ -181,7 +181,15 @@ function assertTrustedNetworkRequest(request, allowOpaqueOrigin = false) {
   }
 }
 
+// 默认仅本机可访问；显式设置 CODEX_TASKBOARD_ALLOW_REMOTE=1 才放宽到任意来源
+// （例如通过局域网 IP 直连，跳过 SSH 端口转发）。放宽后任何能连到这个端口的
+// 设备都能操作 taskboard（起 agent 执行 Bash / 改文件），风险自负。
+function remoteAccessAllowed() {
+  return process.env.CODEX_TASKBOARD_ALLOW_REMOTE === "1";
+}
+
 function assertLoopbackRequest(request) {
+  if (remoteAccessAllowed()) return;
   const address = request.socket.remoteAddress;
   if (
     address !== "127.0.0.1"
@@ -244,6 +252,7 @@ function isLoopbackAddress(value) {
 }
 
 function assertAiLoopbackRequest(request) {
+  if (remoteAccessAllowed()) return;
   if (!isLoopbackAddress(request.socket.remoteAddress)) {
     throw new ApiError(403, "LOCAL_AI_LOOPBACK_REQUIRED", "Local AI routes are only available from this device");
   }
