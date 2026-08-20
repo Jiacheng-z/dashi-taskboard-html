@@ -344,16 +344,25 @@ export async function discoverDuccSkills({ workspacePath, processEnv = process.e
   return [...unique.values()].sort((left, right) => left.label.localeCompare(right.label));
 }
 
-export async function discoverDuccCatalog({ executable, workspacePath, processEnv = process.env }) {
+export async function discoverDuccModels({ executable, workspacePath, processEnv = process.env }) {
   const environment = withoutTaskboardLauncherEnvironment(processEnv);
-  const [models, skills] = await Promise.all([
-    execFileAsync(executable, ["models"], {
+  try {
+    const result = await execFileAsync(executable, ["models"], {
       cwd: workspacePath,
       env: environment,
       encoding: "utf8",
       timeout: CATALOG_TIMEOUT_MS,
       maxBuffer: CATALOG_MAX_BUFFER,
-    }).then((result) => parseDuccModels(result.stdout)).catch(() => []),
+    });
+    return parseDuccModels(result.stdout);
+  } catch {
+    return [];
+  }
+}
+
+export async function discoverDuccCatalog({ executable, workspacePath, processEnv = process.env }) {
+  const [models, skills] = await Promise.all([
+    discoverDuccModels({ executable, workspacePath, processEnv }),
     discoverDuccSkills({ workspacePath, processEnv }),
   ]);
   return { models, skills, sandboxes: [...DUCC_SANDBOXES] };

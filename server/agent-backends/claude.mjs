@@ -2,36 +2,19 @@ import { buildCodexPrompt } from "./codex.mjs";
 import {
   buildDuccArgs,
   createDuccNormalizer,
+  discoverDuccModels,
   discoverDuccSkills,
   executableOnPath,
 } from "./ducc.mjs";
 
-// claude-sonnet-5 放第一位 = #resolveModel 的默认模型（取 catalog.models[0]）。
-// `claude models` 输出非确定性（实测多次跑结果不同），不能解析，这里写死真实 slug。
-const CLAUDE_MODELS = [
-  "claude-sonnet-5",
-  "claude-opus-5",
-  "claude-haiku-4-5-20251001",
-  "claude-fable-5",
-].map((slug) => ({
-  slug,
-  displayName: slug,
-  description: "",
-  defaultReasoningEffort: "medium",
-  supportedReasoningEfforts: ["low", "medium", "high", "max"],
-  serviceTiers: [],
-}));
-
 const CLAUDE_SANDBOXES = ["read-only", "workspace-write", "danger-full-access"];
 
-// claude 不写死模型：剥掉 ducc args 里的 --model，让 CLI 用 cc-switch 控制的
-// ~/.claude/settings.json 默认模型。静态 CLAUDE_MODELS 目录只喂给 #resolveModel
-// 当合法 catalog（不能为空，否则 500 NO_MODELS），不代表真实可用渠道。
-function buildClaudeArgs(thread, addDirectories, imagePaths) {
-  const args = buildDuccArgs(thread, addDirectories, imagePaths);
-  const modelIndex = args.indexOf("--model");
-  if (modelIndex !== -1) args.splice(modelIndex, 2);
-  return args;
+// claude 和 ducc 同一个 base-url（oneapi），模型目录完全一致，直接复用
+// `ducc models` 的解析结果，不用在这里手写第二份、和 ducc 侧脱节的名字列表。
+function resolveDuccExecutable(env) {
+  const explicit = env.DUCC_EXECUTABLE;
+  if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
+  return executableOnPath(env, "ducc") ?? "ducc";
 }
 
 export const claudeBackend = {
@@ -45,17 +28,26 @@ export const claudeBackend = {
     if (typeof explicit === "string" && explicit.trim()) return explicit.trim();
     return executableOnPath(env, "claude") ?? "claude";
   },
-  // 事件归一化 / prompt 与 ducc 逐字通用（同为 Claude Code 2.x 血统）；
-  // buildArgs 例外：剥掉 --model，不写死模型名
-  buildArgs: buildClaudeArgs,
+  // flag 构建 / 事件归一化 / prompt 与 ducc 逐字通用（同为 Claude Code 2.x 血统）。
+  // --model 直接传界面选的 catalog slug（如 "Claude Sonnet 5"），因为
+  // discoverCatalog 就是从 `ducc models` 里读出来的同一份名字。
+  buildArgs: buildDuccArgs,
   buildPrompt: buildCodexPrompt,
   createNormalizer: createDuccNormalizer,
-  // 模型目录静态写死，不 spawn `claude models`（输出非确定性）
-  discoverCatalog: async ({ workspacePath, processEnv }) => ({
-    models: CLAUDE_MODELS,
-    skills: await discoverDuccSkills({ workspacePath, processEnv }),
-    sandboxes: [...CLAUDE_SANDBOXES],
-  }),
+  // 与 ducc 同一个 base-url（oneapi），模型目录直接 spawn `ducc models` 复用，
+  // 不在这里手写第二份、容易和 ducc 侧脱节的静态列表。
+  discoverCatalog: async ({ workspacePath, processEnv }) => {
+    const environment = processEnv ?? process.env;
+    const [models, skills] = await Promise.all([
+      discoverDuccModels({
+        executable: resolveDuccExecutable(environment),
+        workspacePath,
+        processEnv: environment,
+      }),
+      discoverDuccSkills({ workspacePath, processEnv: environment }),
+    ]);
+    return { models, skills, sandboxes: [...CLAUDE_SANDBOXES] };
+  },
   // 同 ducc：MCP 配置散在 ~/.claude.json 里，无公开稳定格式，先返回空数组
   discoverWorkflowCapabilities: async ({ workspacePath, processEnv }) => ({
     skills: await discoverDuccSkills({ workspacePath, processEnv }),

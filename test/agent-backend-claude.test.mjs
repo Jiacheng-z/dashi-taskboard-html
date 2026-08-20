@@ -16,18 +16,17 @@ const THREAD = {
   codexThreadId: null,
 };
 
-test("claude buildArgs reuses ducc flags but drops --model", () => {
-  // buildArgs 是包了 buildDuccArgs 的独立函数，不再同一个引用
-  assert.notEqual(claudeBackend.buildArgs, duccBackend.buildArgs);
+test("claude buildArgs reuses the ducc flags (same function), including --model", () => {
+  // claude 和 ducc 同一个 base-url（oneapi），界面选的模型名直接原样传给 CLI
+  assert.equal(claudeBackend.buildArgs, duccBackend.buildArgs);
   assert.deepEqual(claudeBackend.buildArgs(THREAD, ["/other"], []), [
     "-p", "--output-format", "stream-json", "--verbose",
     "--session-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     "--permission-mode", "acceptEdits",
     "--add-dir", "/other",
+    "--model", "claude-sonnet-5",
     "--effort", "high",
   ]);
-  // --model 被剥掉：claude 用 cc-switch 的 ~/.claude/settings.json 默认模型
-  assert.ok(!claudeBackend.buildArgs(THREAD, [], []).includes("--model"));
   assert.equal(claudeBackend.needsCwd, true);
   // 官方 claude 没有 bin/ducc 每次启动 sed -i 同一份 settings.json 的并发撞写问题
   assert.equal(claudeBackend.spawnGapMs, 0);
@@ -73,7 +72,7 @@ async function writeSkill(root, name, description) {
   return path.join(directory, "SKILL.md");
 }
 
-test("claude discoverCatalog returns static models and scanned skills", async () => {
+test("claude discoverCatalog spawns `ducc models` (same source as ducc backend) and scans skills", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "taskboard-claude-catalog-"));
   try {
     const workspacePath = path.join(root, "ws");
@@ -82,25 +81,27 @@ test("claude discoverCatalog returns static models and scanned skills", async ()
     const repoSkillPath = await writeSkill(workspacePath, "manage-taskboard", "看板任务操作");
     await writeSkill(home, "humanizer", "去掉 AI 味");
 
+    const binDirectory = path.join(root, "bin");
+    await mkdir(binDirectory);
+    const duccExecutable = path.join(binDirectory, "ducc");
+    await writeFile(
+      duccExecutable,
+      "#!/bin/sh\necho 'Available Models:'\necho 'Claude Sonnet 5, Opus 5, DeepSeek-V4-Flash'\n",
+    );
+    await chmod(duccExecutable, 0o755);
+
     const catalog = await claudeBackend.discoverCatalog({
       workspacePath,
-      processEnv: { ...process.env, HOME: home },
+      processEnv: { ...process.env, HOME: home, PATH: binDirectory },
     });
 
+    // 模型目录来自 `ducc models`，和 ducc 后端读到的是同一份名字（同 base-url）。
+    // parseDuccModels 会把 DUCC_PREFERRED_MODEL("Opus 5") 顶到第一位。
     assert.deepEqual(catalog.models.map((model) => model.slug), [
-      "claude-sonnet-5",
-      "claude-opus-5",
-      "claude-haiku-4-5-20251001",
-      "claude-fable-5",
+      "Opus 5",
+      "Claude Sonnet 5",
+      "DeepSeek-V4-Flash",
     ]);
-    assert.deepEqual(catalog.models[0], {
-      slug: "claude-sonnet-5",
-      displayName: "claude-sonnet-5",
-      description: "",
-      defaultReasoningEffort: "medium",
-      supportedReasoningEfforts: ["low", "medium", "high", "max"],
-      serviceTiers: [],
-    });
     assert.deepEqual(catalog.sandboxes, ["read-only", "workspace-write", "danger-full-access"]);
     assert.deepEqual(catalog.skills.map((skill) => skill.id), ["humanizer", "manage-taskboard"]);
     assert.equal(catalog.skills[1].path, repoSkillPath);
